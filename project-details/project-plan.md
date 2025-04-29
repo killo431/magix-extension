@@ -26,7 +26,25 @@ A detailed development plan broken down into phases with specific technical goal
 - Design basic chat UI components (message bubbles, input field)
 - Develop history toggle panel UI skeleton
 
-## Phase 2: Core Functionality
+## Phase 2: UI & Dummy Interaction
+
+### Improved Chat UI
+- Design and implement chat bubbles for user messages and Magix responses.
+- Style the input area and send button according to the design preferences (Inter font, black/white/grey palette).
+- Ensure the chat area scrolls correctly as messages are added.
+
+### Dummy Chat Flow
+- When a user sends a message (e.g., "hide youtube shorts"), display the user's message bubble.
+- Display a dummy Magix response bubble (e.g., "Sure, let me hide the shorts section for you.").
+- Below the response, display a placeholder "Doing magix..." indicator (e.g., a box with a shimmer effect).
+- This phase does *not* involve actual LLM calls or script generation yet.
+
+### Basic Script Testing (Example)
+- Implement a hardcoded example script (e.g., one that hides YouTube shorts via CSS or simple DOM manipulation).
+- Add temporary logic (e.g., triggered by a specific dummy chat message or a test button) to inject this hardcoded script using `chrome.scripting.executeScript`.
+- Verify the example script works on the target site (e.g., YouTube).
+
+## Phase 3: Core Functionality
 
 ### LLM Integration
 - Set up secure Gemini API client
@@ -49,7 +67,7 @@ A detailed development plan broken down into phases with specific technical goal
 - Create tab reloading mechanism after successful injection
 - Test end-to-end flow from user input to script execution
 
-## Phase 3: Enhancement & Refinement
+## Phase 4: Enhancement & Refinement
 
 ### Script Management UI
 - Develop history panel with script listing and search
@@ -72,7 +90,7 @@ A detailed development plan broken down into phases with specific technical goal
 - Add automatic error reporting (optional)
 - Build recovery mechanisms for failed injections
 
-## Phase 4: Polish & Deployment
+## Phase 5: Polish & Deployment
 
 ### Performance Optimization
 - Implement lazy loading for script components
