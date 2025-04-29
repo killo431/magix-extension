@@ -27,11 +27,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({ status: "Error: Sender tab information missing." });
     }
   }
+  // Removed the 'else if (message.action === "signInWithGoogle")' block
+  // as authentication is now handled directly in the side panel via Supabase client.
 
-  // Return true to indicate you wish to send a response asynchronously
-  // (although in this simple case, sendResponse is called synchronously)
-  return true;
-});
+  // If the message wasn't handled, we don't need to return true here for async
+  // unless other conditions above might respond asynchronously.
+  // Let's return true generally within the listener if any branch might be async.
+  return true; // Keep this for the listener itself
+}); // End of onMessage listener
 
 
 console.log('Magix background service worker started.');
