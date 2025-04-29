@@ -1,0 +1,29 @@
+/* sidepanel/index.css */
+
+/* Import Inter font - requires internet connection */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+/* Basic Reset */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Inter', sans-serif;
+  background-color: #ffffff; /* White background */
+  color: #1a1a1a; /* Dark grey/black text */
+  padding: 16px;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Add a placeholder style for the root element */
+#root {
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  /* We'll add more specific layout styles later */
+}
