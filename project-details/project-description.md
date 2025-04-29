@@ -16,7 +16,7 @@ Behind the scenes, Magix leverages Gemini's AI to instantly generate custom Java
 
 - **Visual Transformation with Persistence**: Changes apply instantly and persist across sessions. The system remembers user preferences per site and automatically applies them on return visits.
 
-- **Cross-Device Synchronization**: With Supabase-powered cloud storage, users' customizations follow them across any device where they're signed into Magix.
+- **Cross-Device Synchronization**: With Supabase-powered cloud database, users' customizations follow them across any device where they're signed into Magix.
 
 - **Context-Aware Intelligence**: Magix understands the structure of popular websites, allowing for more precise and reliable modifications.
 
@@ -35,7 +35,7 @@ Magix combines Chrome's extension APIs with cloud infrastructure and AI:
 
 - **Frontend**: React-based side panel with streamlined chat UI
 - **Middleware**: Service workers manage script injection and persistence
-- **Backend**: Supabase handles authentication and script storage
+- **Backend**: Supabase handles authentication and database
 - **Intelligence**: Gemini AI generates precise JavaScript from natural language
 
 ### Target Users
