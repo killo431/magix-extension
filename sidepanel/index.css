@@ -3,27 +3,20 @@
 /* Import Inter font - requires internet connection */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
-/* Basic Reset */
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
-
+/* Apply Inter font globally */
 body {
-  font-family: 'Inter', sans-serif;
-  background-color: #ffffff; /* White background */
-  color: #1a1a1a; /* Dark grey/black text */
-  padding: 16px;
+  font-family: 'Inter', sans-serif !important; /* Use !important to potentially override MUI defaults if needed */
+  margin: 0; /* Remove default body margin */
   height: 100vh;
-  display: flex;
-  flex-direction: column;
+  overflow: hidden; /* Prevent body scroll */
 }
 
-/* Add a placeholder style for the root element */
+/* Ensure root takes full height */
 #root {
-  flex-grow: 1;
-  display: flex;
-  flex-direction: column;
-  /* We'll add more specific layout styles later */
+ height: 100%;
+}
+
+/* Remove default browser focus outline, MUI handles focus styling */
+*:focus {
+  outline: none;
 }
