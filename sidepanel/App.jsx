@@ -173,10 +173,16 @@ function App() {
 
   // Input area for the CHAT screen (single-line)
   const renderChatInputArea = () => (
+    // Add horizontal and bottom padding to this container
     <Box sx={{
       display: 'flex', flexDirection: 'row', alignItems: 'center',
-      p: 1, borderRadius: 3, bgcolor: 'grey.100', border: '1px solid #e0e0e0',
-      // Removed mt: 'auto' - flexGrow on message area should handle positioning
+      p: 1,
+      px: 2,
+      pb: 2,
+      borderRadius: 0, // Removed border radius
+      bgcolor: 'grey.100',
+      border: '1px solid #e0e0e0',
+      mt: 'auto'
     }}>
       <TextField
         fullWidth
@@ -206,7 +212,8 @@ function App() {
   );
 
   const renderHomeScreen = () => (
-    <>
+    // Add padding here since it's removed from the main container
+    <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', flexGrow: 1 }}>
       <Typography variant="h6" component="h1" sx={{ textAlign: 'center', mb: 2, fontSize: '1.05rem', fontWeight: 600 }}>
         Modify any website 🪄
       </Typography>
@@ -225,11 +232,12 @@ function App() {
           </List>
         </Box>
       )}
-    </>
+    </Box> // Close padding Box for home screen
   );
 
   const renderChatScreen = () => (
-    <>
+     // This Box now needs to manage the full height flex layout for chat
+    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       {/* Fixed Header */}
       <Box sx={{
         position: 'sticky', // Make header sticky
@@ -266,7 +274,8 @@ function App() {
       </Box>
 
       {/* Chat Message Area - Ensure it grows and scrolls below header */}
-      <Box sx={{ flexGrow: 1, overflowY: 'auto', mb: 2, display: 'flex', flexDirection: 'column', gap: 1, px: 1 }}> {/* Added horizontal padding */}
+      {/* Added padding here */}
+      <Box sx={{ flexGrow: 1, overflowY: 'auto', p: 2, display: 'flex', flexDirection: 'column', gap: 1 }}>
         {messages.map((msg) => (
           <Box key={msg.id} sx={{ alignSelf: msg.sender === 'user' ? 'flex-end' : 'flex-start', maxWidth: '80%' }}>
             {msg.status === 'processing' ? (
@@ -289,14 +298,13 @@ function App() {
         <div ref={chatEndRef} />
       </Box>
       {renderChatInputArea()} {/* Use chat input */}
-    </>
+    </Box> // Close chat screen flex container
   );
 
   return (
-    // Main container - Ensure flex column and full height
+    // Main container - Removed padding, ensure full height flex
     <Box sx={{
-      display: 'flex', flexDirection: 'column', height: '100vh', // Use vh for full viewport height
-      p: 2, // Keep padding
+      display: 'flex', flexDirection: 'column', height: '100vh',
       bgcolor: 'background.paper',
       justifyContent: !isChatView && !session ? 'center' : 'flex-start'
     }}>
