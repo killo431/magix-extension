@@ -10,17 +10,23 @@ import ListItemText from '@mui/material/ListItemText';
 import Switch from '@mui/material/Switch';
 import AccountCircleIcon from '@mui/icons-material/AccountCircle'; // Profile icon
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward'; // Submit icon
-import Paper from '@mui/material/Paper'; // For message bubbles
-import CircularProgress from '@mui/material/CircularProgress'; // Simple loading indicator
+import Paper from '@mui/material/Paper';
+import CircularProgress from '@mui/material/CircularProgress';
+import Popover from '@mui/material/Popover'; // For account dialog
+// Removed duplicate List import
+import ListItemButton from '@mui/material/ListItemButton'; // Clickable list items
+// Removed duplicate ListItemText import
 
 function App() {
   const [session, setSession] = useState(null);
   const [error, setError] = useState(null);
   const [isLoading, setIsLoading] = useState(false); // For auth loading
   const [inputValue, setInputValue] = useState('');
-  const [isChatView, setIsChatView] = useState(false); // Toggle between home and chat
-  const [messages, setMessages] = useState([]); // Array to hold chat messages
-  const chatEndRef = useRef(null); // Ref to scroll to bottom
+  const [isChatView, setIsChatView] = useState(false);
+  const [messages, setMessages] = useState([]);
+  const chatContainerRef = useRef(null); // Ref for the scrollable chat container
+  const chatEndRef = useRef(null);
+  const [accountMenuAnchorEl, setAccountMenuAnchorEl] = useState(null); // State for account popover
 
   // --- Authentication Handling ---
   useEffect(() => {
@@ -45,15 +51,31 @@ function App() {
     };
   }, []);
 
-  // --- Scroll to bottom effect ---
+  // --- Scroll to bottom effect (Improved) ---
   useEffect(() => {
-    // Only scroll if the last message isn't the initial 'processing' indicator
-    // or if the view isn't already scrolled near the bottom (more complex check omitted for now)
-    const lastMessage = messages[messages.length - 1];
-    if (lastMessage && lastMessage.status !== 'processing') {
+    const chatContainer = chatContainerRef.current;
+    if (!chatContainer) return;
+
+    // Check if user is scrolled near the bottom before new message added
+    // Threshold can be adjusted (e.g., height of one message)
+    const scrollThreshold = 100;
+    const isScrolledNearBottom = chatContainer.scrollHeight - chatContainer.scrollTop - chatContainer.clientHeight < scrollThreshold;
+
+    // Only scroll if near the bottom OR if it's the initial load of messages
+    if (isScrolledNearBottom || messages.length <= 3) { // Scroll initially
         chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
-  }, [messages]); // Scroll only when messages array content changes meaningfully
+  }, [messages]);
+
+  // --- Account Menu Handlers ---
+   const handleAccountMenuOpen = (event) => {
+    setAccountMenuAnchorEl(event.currentTarget);
+  };
+  const handleAccountMenuClose = () => {
+    setAccountMenuAnchorEl(null);
+  };
+  const openAccountMenu = Boolean(accountMenuAnchorEl);
+  const accountMenuId = openAccountMenu ? 'account-popover' : undefined;
 
   const handleSignIn = async () => {
     setError(null);
@@ -247,12 +269,13 @@ function App() {
         p: 1,               // Add some padding
         mb: 1,              // Margin below header
         display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center'
-        // Removed borderBottom
+         justifyContent: 'space-between',
+         alignItems: 'center'
       }}>
-         {/* Profile Icon */}
-         <AccountCircleIcon sx={{ color: 'grey.600', fontSize: '1.25rem' }} />
+         {/* Clickable Profile Icon */}
+         <IconButton onClick={handleAccountMenuOpen} size="small">
+            <AccountCircleIcon sx={{ color: 'grey.600', fontSize: '1.25rem' }} />
+         </IconButton>
          {/* Placeholder Toggle Switch */}
          <Switch
             size="small"
@@ -272,10 +295,31 @@ function App() {
             }}
          />
       </Box>
+       {/* Account Popover/Dialog */}
+       <Popover
+          id={accountMenuId}
+          open={openAccountMenu}
+          anchorEl={accountMenuAnchorEl}
+          onClose={handleAccountMenuClose}
+          anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+          transformOrigin={{ vertical: 'top', horizontal: 'left'}}
+          slotProps={{ paper: { sx: { width: '200px', mt: 1 } } }} // Adjust width and margin top
+        >
+          <List dense>
+            <ListItem>
+              <ListItemText primary="Monthly messages:" secondary="0/10" />
+            </ListItem>
+            <ListItemButton onClick={() => { console.log('Go to Dashboard clicked'); handleAccountMenuClose(); }}>
+              <ListItemText primary="Go to dashboard" />
+            </ListItemButton>
+            <ListItemButton onClick={() => { console.log('Account Settings clicked'); handleAccountMenuClose(); }}>
+              <ListItemText primary="Account settings" />
+            </ListItemButton>
+          </List>
+        </Popover>
 
-      {/* Chat Message Area - Ensure it grows and scrolls below header */}
-      {/* Added padding here */}
-      <Box sx={{ flexGrow: 1, overflowY: 'auto', p: 2, display: 'flex', flexDirection: 'column', gap: 1 }}>
+      {/* Chat Message Area - Added ref */}
+      <Box ref={chatContainerRef} sx={{ flexGrow: 1, overflowY: 'auto', p: 2, display: 'flex', flexDirection: 'column', gap: 1 }}>
         {messages.map((msg) => (
           <Box key={msg.id} sx={{ alignSelf: msg.sender === 'user' ? 'flex-end' : 'flex-start', maxWidth: '80%' }}>
             {msg.status === 'processing' ? (
