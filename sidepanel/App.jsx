@@ -51,20 +51,10 @@ function App() {
     };
   }, []);
 
-  // --- Scroll to bottom effect (Improved) ---
+  // --- Scroll to bottom effect (Simplified & Corrected) ---
   useEffect(() => {
-    const chatContainer = chatContainerRef.current;
-    if (!chatContainer) return;
-
-    // Check if user is scrolled near the bottom before new message added
-    // Threshold can be adjusted (e.g., height of one message)
-    const scrollThreshold = 100;
-    const isScrolledNearBottom = chatContainer.scrollHeight - chatContainer.scrollTop - chatContainer.clientHeight < scrollThreshold;
-
-    // Only scroll if near the bottom OR if it's the initial load of messages
-    if (isScrolledNearBottom || messages.length <= 3) { // Scroll initially
-        chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    }
+    // Scroll to the end whenever messages change
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
   // --- Account Menu Handlers ---
@@ -303,13 +293,15 @@ function App() {
           onClose={handleAccountMenuClose}
           anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
           transformOrigin={{ vertical: 'top', horizontal: 'left'}}
-          slotProps={{ paper: { sx: { width: '200px', mt: 1 } } }} // Adjust width and margin top
+          // Added borderRadius to paper slotProps
+          slotProps={{ paper: { sx: { width: '200px', mt: 1, borderRadius: 2 } } }}
         >
           <List dense>
             <ListItem>
               <ListItemText primary="Monthly messages:" secondary="0/10" />
             </ListItem>
-            <ListItemButton onClick={() => { console.log('Go to Dashboard clicked'); handleAccountMenuClose(); }}>
+            {/* Updated onClick for Go to dashboard */}
+            <ListItemButton onClick={() => { setIsChatView(false); handleAccountMenuClose(); }}>
               <ListItemText primary="Go to dashboard" />
             </ListItemButton>
             <ListItemButton onClick={() => { console.log('Account Settings clicked'); handleAccountMenuClose(); }}>
