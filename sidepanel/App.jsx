@@ -132,7 +132,8 @@ function App() {
     } else {
       console.log("User authenticated, adding dummy messages...");
       const newUserMessage = { id: Date.now(), sender: 'user', text: messageText };
-      const magixResponse = { id: Date.now() + 1, sender: 'magix', text: `Sure, let me try to modify: "${messageText.substring(0, 30)}..."` };
+      // Updated dummy response text
+      const magixResponse = { id: Date.now() + 1, sender: 'magix', text: "Sure, let me try to modify that for you." };
       const magixIndicator = { id: Date.now() + 2, sender: 'magix', status: 'processing' };
 
       setMessages(prev => [...prev, newUserMessage, magixResponse, magixIndicator]);
@@ -262,10 +263,9 @@ function App() {
          justifyContent: 'space-between',
          alignItems: 'center'
       }}>
-         {/* Clickable Profile Icon */}
-         <IconButton onClick={handleAccountMenuOpen} size="small">
-            <AccountCircleIcon sx={{ color: 'grey.600', fontSize: '1.25rem' }} />
-         </IconButton>
+         {/* Profile Icon moved back to main return */}
+         {/* Placeholder for alignment if needed, or adjust justifyContent */}
+         <Box sx={{ width: 28 }} /> {/* Placeholder to balance space-between */}
          {/* Placeholder Toggle Switch */}
          <Switch
             size="small"
@@ -321,13 +321,18 @@ function App() {
                    Doing magix...
                  </Typography>
               </Paper>
-            ) : (
-              <Paper elevation={1} sx={{ p: 1.5, borderRadius: 2, bgcolor: msg.sender === 'user' ? 'grey.300' : 'grey.100' }}>
-                 {/* Added wordBreak */}
-                <Typography variant="body2" sx={{ fontSize: '0.9rem', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+            ) : msg.sender === 'user' ? (
+               // User message bubble (no elevation, grey.200 bg)
+               <Paper elevation={0} sx={{ p: 1.5, borderRadius: 2, bgcolor: 'grey.200' }}>
+                 <Typography variant="body2" sx={{ fontSize: '0.9rem', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                   {msg.text}
+                 </Typography>
+               </Paper>
+            ) : ( // Magix response message (plain text, no bubble) - Removed padding
+               <Typography variant="body2" sx={{ fontSize: '0.9rem', whiteSpace: 'pre-wrap', wordBreak: 'break-word', alignSelf: 'flex-start' }}>
                   {msg.text}
-                </Typography>
-              </Paper>
+               </Typography>
+               // Removed the erroneous closing Paper tag
             )}
           </Box>
         ))}
@@ -344,7 +349,12 @@ function App() {
       bgcolor: 'background.paper',
       justifyContent: !isChatView && !session ? 'center' : 'flex-start'
     }}>
-      {/* Profile Icon is now inside renderChatScreen header */}
+      {/* Profile Icon - Rendered based on session, outside view switch */}
+      {session && (
+        <IconButton onClick={handleAccountMenuOpen} size="small" sx={{ position: 'absolute', top: 16, left: 16, zIndex: 2 }}>
+           <AccountCircleIcon sx={{ color: 'grey.600', fontSize: '1.25rem' }} />
+        </IconButton>
+      )}
 
       {isChatView ? renderChatScreen() : renderHomeScreen()}
 
