@@ -17,7 +17,11 @@ import Popover from '@mui/material/Popover';
 import ListItemButton from '@mui/material/ListItemButton';
 import Tabs from '@mui/material/Tabs'; // For settings screen
 import Tab from '@mui/material/Tab';   // For settings screen
-import Button from '@mui/material/Button'; // For settings screen
+import Button from '@mui/material/Button';
+import Divider from '@mui/material/Divider';
+import Link from '@mui/material/Link';
+import Chip from '@mui/material/Chip'; // For Pro User pill
+import LinearProgress from '@mui/material/LinearProgress'; // For usage bar
 
 // TabPanel component for settings screen
 function TabPanel(props) {
@@ -31,7 +35,8 @@ function TabPanel(props) {
       {...other}
     >
       {value === index && (
-        <Box sx={{ p: 3 }}>
+        // Removed default padding, will add specifically to content
+        <Box>
           {children}
         </Box>
       )}
@@ -65,6 +70,7 @@ function App() {
   const chatEndRef = useRef(null);
   const [accountMenuAnchorEl, setAccountMenuAnchorEl] = useState(null);
   const [settingsTab, setSettingsTab] = useState(0);
+  const [userName, setUserName] = useState(''); // State for name field
 
   // State for placeholder animation
   const [placeholderIndex, setPlaceholderIndex] = useState(0);
@@ -76,6 +82,7 @@ function App() {
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
+      // TODO: Fetch user profile/name if available
       console.log("Initial session:", session);
     });
     const { data: authListener } = supabase.auth.onAuthStateChange(
@@ -87,6 +94,8 @@ function App() {
         if (!session) {
           setCurrentView('home');
           setMessages([]);
+        } else {
+           // TODO: Fetch user profile/name if available
         }
       }
     );
@@ -102,49 +111,47 @@ function App() {
     }
   }, [messages, currentView]);
 
-  // --- Placeholder Animation Effect ---
+  // --- Placeholder Animation Effect (Revised Timer Logic) ---
   useEffect(() => {
     // Only run animation on home screen
     if (currentView !== 'home') {
-      // Reset placeholder if navigating away from home
-      setAnimatedPlaceholder(''); // Or set to a default static placeholder if preferred
-      return;
+      setAnimatedPlaceholder(''); // Reset placeholder if navigating away
+      return; // Stop the effect if not on home screen
     }
+
+    let timeoutId; // Define timer ID variable
 
     // Typing effect
     if (subIndex < placeholderSuggestions[placeholderIndex].length && !reverse) {
-      const timeout = setTimeout(() => {
+      timeoutId = setTimeout(() => {
         setAnimatedPlaceholder(prev => prev + placeholderSuggestions[placeholderIndex][subIndex]);
         setSubIndex(prev => prev + 1);
       }, 100); // Typing speed
-      return () => clearTimeout(timeout);
     }
-
     // Pause at end of typing
-    if (subIndex === placeholderSuggestions[placeholderIndex].length && !reverse) {
-       const timeout = setTimeout(() => {
+    else if (subIndex === placeholderSuggestions[placeholderIndex].length && !reverse) {
+       timeoutId = setTimeout(() => {
          setReverse(true);
-       }, 1500); // Pause duration (1.5 seconds)
-       return () => clearTimeout(timeout);
+       }, 1500); // Pause duration
     }
-
     // Deleting effect
-    if (subIndex > 0 && reverse) {
-      const timeout = setTimeout(() => {
+    else if (subIndex > 0 && reverse) {
+      timeoutId = setTimeout(() => {
         setAnimatedPlaceholder(prev => prev.slice(0, -1));
         setSubIndex(prev => prev - 1);
       }, 50); // Deleting speed
-      return () => clearTimeout(timeout);
     }
-
     // Switch to next placeholder after deleting
-    if (subIndex === 0 && reverse) {
+    else if (subIndex === 0 && reverse) {
+      // No timeout needed here, just update state for the next cycle
       setReverse(false);
       setPlaceholderIndex(prev => (prev + 1) % placeholderSuggestions.length);
-      // No timeout here, immediately start typing next one
     }
 
-  }, [subIndex, placeholderIndex, reverse, currentView]); // Rerun effect when these change or view changes
+    // Cleanup function clears the single timer
+    return () => clearTimeout(timeoutId);
+
+  }, [subIndex, placeholderIndex, reverse, currentView]); // Dependencies remain the same
 
 
   // --- Account Menu Handlers ---
@@ -161,6 +168,19 @@ function App() {
   const handleSettingsTabChange = (event, newValue) => {
     setSettingsTab(newValue);
   };
+
+  // --- Name Update Handler (Placeholder) ---
+  const handleNameUpdate = () => {
+    console.log("Update name clicked:", userName);
+    // TODO: Implement actual name update logic with Supabase
+  };
+
+  // --- Delete Account Handler (Placeholder) ---
+   const handleDeleteAccount = () => {
+    console.log("Delete account clicked");
+    // TODO: Implement confirmation and deletion logic
+  };
+
 
   const handleSignIn = async () => {
     // ... (keep existing handleSignIn logic) ...
@@ -261,8 +281,7 @@ function App() {
     }}>
       <TextField
         fullWidth multiline minRows={2} maxRows={3} variant="standard"
-        // Use animated placeholder here
-        placeholder={animatedPlaceholder + '|'} // Add cursor effect
+        placeholder={animatedPlaceholder + '|'}
         value={inputValue} onChange={handleInputChange} onKeyDown={handleKeyDown}
         InputProps={{ disableUnderline: true, sx: { fontSize: '0.9rem' } }}
         sx={{ flexGrow: 1, '& .MuiInputBase-root': { py: 0.5 }, mb: 4 }}
@@ -287,9 +306,7 @@ function App() {
       border: '1px solid #e0e0e0', mt: 'auto'
     }}>
       <TextField
-        fullWidth multiline={false} variant="standard"
-        // Static placeholder for chat
-        placeholder="Ask Magix..."
+        fullWidth multiline={false} variant="standard" placeholder="Ask Magix..."
         value={inputValue} onChange={handleInputChange} onKeyDown={handleKeyDown}
         InputProps={{ disableUnderline: true, sx: { fontSize: '0.9rem' } }}
         sx={{ mr: 1, '& .MuiInputBase-root': { py: 1 } }}
@@ -389,9 +406,18 @@ function App() {
          </Typography>
        </Box>
 
-       {/* Tabs */}
+       {/* Tabs - Updated indicator color */}
        <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
-         <Tabs value={settingsTab} onChange={handleSettingsTabChange} aria-label="account settings tabs">
+         <Tabs
+           value={settingsTab}
+           onChange={handleSettingsTabChange}
+           aria-label="account settings tabs"
+           textColor="inherit" // Use inherit to allow sx override
+           sx={{
+             '& .MuiTabs-indicator': { backgroundColor: 'common.black' },
+             '& .Mui-selected': { color: 'common.black', fontWeight: 600 }, // Style selected tab text
+           }}
+          >
            <Tab label="Account Info" {...a11yProps(0)} sx={{ textTransform: 'none', fontSize: '0.9rem' }} />
            <Tab label="Billing" {...a11yProps(1)} sx={{ textTransform: 'none', fontSize: '0.9rem' }} />
          </Tabs>
@@ -399,13 +425,78 @@ function App() {
 
        {/* Tab Panels */}
        <TabPanel value={settingsTab} index={0}>
-         <Typography variant="body2">Email: {session?.user?.email || 'N/A'}</Typography>
+         {/* Account Info Content - Added specific padding */}
+         <Box sx={{ pt: 3, px: 1 }}>
+           <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+             <TextField
+                label="Name"
+                variant="outlined"
+                size="small"
+                value={userName}
+                onChange={(e) => setUserName(e.target.value)}
+                // Added border radius & font size styling
+                InputProps={{ sx: { fontSize: '0.9rem' } }}
+                sx={{ flexGrow: 1, mr: 1, '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+            />
+            {/* Updated button styling: black, no elevation */}
+            <Button variant="contained" size="small" onClick={handleNameUpdate} disableElevation sx={{ textTransform: 'none', borderRadius: 2, bgcolor: 'common.black', '&:hover': { bgcolor: 'grey.800' } }}>
+                Update
+            </Button>
+         </Box>
+         <TextField
+            label="Email"
+            variant="outlined"
+            size="small"
+            disabled
+            value={session?.user?.email || ''}
+            fullWidth
+            // Added border radius & font size styling
+            InputProps={{ sx: { fontSize: '0.9rem' } }}
+            sx={{ mb: 3, '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+         />
+
+         <Divider sx={{ my: 2 }} />
+
+         {/* Danger Zone - Reduced text weight */}
+         <Box sx={{ mt: 2 }}>
+            <Typography variant="subtitle2" color="error" sx={{ mb: 1, fontWeight: 500 }}>
+                Danger Zone
+            </Typography>
+            {/* Changed variant to outlined */}
+            <Button variant="outlined" color="error" size="small" onClick={handleDeleteAccount} disableElevation sx={{ textTransform: 'none', borderRadius: 2 }}>
+                Delete Account
+            </Button>
+         </Box>
+
+         <Divider sx={{ my: 3 }} />
+
+         {/* Links - Updated href and added target */}
+         <Box sx={{ display: 'flex', justifyContent: 'center', gap: 2, flexWrap: 'wrap' }}>
+            <Link href="https://trymagix.com/privacy" target="_blank" rel="noopener noreferrer" underline="hover" variant="caption" color="text.secondary">Privacy Policy</Link>
+            <Link href="https://trymagix.com/terms" target="_blank" rel="noopener noreferrer" underline="hover" variant="caption" color="text.secondary">Terms of Service</Link>
+            <Link href="https://trymagix.com/contact" target="_blank" rel="noopener noreferrer" underline="hover" variant="caption" color="text.secondary">Contact Us</Link>
+         </Box>
+        </Box> {/* Close specific padding Box */}
        </TabPanel>
        <TabPanel value={settingsTab} index={1}>
-         <Typography variant="body2" sx={{ mb: 1 }}>Monthly Limits: 0/10 messages used.</Typography>
-         <Button variant="outlined" size="small" sx={{ textTransform: 'none', borderRadius: 2 }}>
-           Manage Billing (Dummy)
-         </Button>
+         {/* Billing Content - Added specific padding */}
+         <Box sx={{ pt: 3, px: 1 }}>
+           {/* Pro User Pill - Changed color */}
+           <Chip label="Pro User" size="small" sx={{ mb: 2, bgcolor: 'common.black', color: 'common.white' }} />
+           {/* Usage Text */}
+           <Typography variant="body2" sx={{ mb: 1 }}>Monthly Limits: 1/10 messages used.</Typography>
+           {/* Progress Bar - Added dynamic color */}
+           <LinearProgress
+             variant="determinate"
+             value={10} // Dummy value (1/10 = 10%)
+             color={10 >= 80 ? 'error' : 10 >= 50 ? 'warning' : 'success'} // Dynamic color based on value
+             sx={{ mb: 2, height: 8, borderRadius: 1 }}
+            />
+           {/* Updated Manage Billing Button */}
+           <Button variant="contained" size="small" disableElevation sx={{ textTransform: 'none', borderRadius: 2, bgcolor: 'common.black', '&:hover': { bgcolor: 'grey.800' } }}>
+             Manage Billing (Dummy)
+           </Button>
+        </Box> {/* Close specific padding Box for Billing */}
        </TabPanel>
     </Box>
   );
