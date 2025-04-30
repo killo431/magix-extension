@@ -315,9 +315,11 @@ function App() {
         {messages.map((msg) => (
           <Box key={msg.id} sx={{ alignSelf: msg.sender === 'user' ? 'flex-end' : 'flex-start', maxWidth: '80%' }}>
             {msg.status === 'processing' ? (
-              <Paper elevation={0} sx={{ p: 1, borderRadius: 2, bgcolor: 'grey.200', display: 'flex', alignItems: 'center', gap: 1 }}>
-                 <CircularProgress size={16} sx={{ color: 'grey.500' }}/>
-                 <Typography variant="body2" sx={{ fontStyle: 'italic', color: 'text.secondary', fontSize: '0.9rem' }}>
+              // Added className for shimmer effect
+              <Paper className="shimmer-bubble" elevation={0} sx={{ p: 1, borderRadius: 2, bgcolor: 'grey.200', display: 'flex', alignItems: 'center', gap: 1, overflow: 'hidden', position: 'relative' }}>
+                 {/* Removed CircularProgress */}
+                 {/* Updated Typography style: removed italic, added medium weight */}
+                 <Typography variant="body2" sx={{ fontWeight: 500, color: 'text.secondary', fontSize: '0.9rem' }}>
                    Doing magix...
                  </Typography>
               </Paper>
