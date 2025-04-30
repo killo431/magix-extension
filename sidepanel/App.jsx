@@ -10,23 +10,54 @@ import ListItemText from '@mui/material/ListItemText';
 import Switch from '@mui/material/Switch';
 import AccountCircleIcon from '@mui/icons-material/AccountCircle'; // Profile icon
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward'; // Submit icon
+import ArrowBackIcon from '@mui/icons-material/ArrowBack'; // Back icon
 import Paper from '@mui/material/Paper';
 import CircularProgress from '@mui/material/CircularProgress';
-import Popover from '@mui/material/Popover'; // For account dialog
-// Removed duplicate List import
-import ListItemButton from '@mui/material/ListItemButton'; // Clickable list items
-// Removed duplicate ListItemText import
+import Popover from '@mui/material/Popover';
+import ListItemButton from '@mui/material/ListItemButton';
+import Tabs from '@mui/material/Tabs'; // For settings screen
+import Tab from '@mui/material/Tab';   // For settings screen
+import Button from '@mui/material/Button'; // For settings screen
+
+// TabPanel component for settings screen
+function TabPanel(props) {
+  const { children, value, index, ...other } = props;
+  return (
+    <div
+      role="tabpanel"
+      hidden={value !== index}
+      id={`settings-tabpanel-${index}`}
+      aria-labelledby={`settings-tab-${index}`}
+      {...other}
+    >
+      {value === index && (
+        <Box sx={{ p: 3 }}>
+          {children}
+        </Box>
+      )}
+    </div>
+  );
+}
+
+function a11yProps(index) {
+  return {
+    id: `settings-tab-${index}`,
+    'aria-controls': `settings-tabpanel-${index}`,
+  };
+}
+
 
 function App() {
   const [session, setSession] = useState(null);
   const [error, setError] = useState(null);
-  const [isLoading, setIsLoading] = useState(false); // For auth loading
+  const [isLoading, setIsLoading] = useState(false);
   const [inputValue, setInputValue] = useState('');
-  const [isChatView, setIsChatView] = useState(false);
+  const [currentView, setCurrentView] = useState('home'); // 'home', 'chat', 'settings'
   const [messages, setMessages] = useState([]);
-  const chatContainerRef = useRef(null); // Ref for the scrollable chat container
+  const chatContainerRef = useRef(null);
   const chatEndRef = useRef(null);
-  const [accountMenuAnchorEl, setAccountMenuAnchorEl] = useState(null); // State for account popover
+  const [accountMenuAnchorEl, setAccountMenuAnchorEl] = useState(null);
+  const [settingsTab, setSettingsTab] = useState(0); // State for settings tabs
 
   // --- Authentication Handling ---
   useEffect(() => {
@@ -41,7 +72,7 @@ function App() {
         setIsLoading(false);
         setError(null);
         if (!session) {
-          setIsChatView(false);
+          setCurrentView('home'); // Reset to home on sign out
           setMessages([]);
         }
       }
@@ -51,11 +82,12 @@ function App() {
     };
   }, []);
 
-  // --- Scroll to bottom effect (Simplified & Corrected) ---
+  // --- Scroll to bottom effect ---
   useEffect(() => {
-    // Scroll to the end whenever messages change
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+    if (currentView === 'chat') {
+      chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [messages, currentView]); // Rerun when view changes or messages update
 
   // --- Account Menu Handlers ---
    const handleAccountMenuOpen = (event) => {
@@ -67,7 +99,13 @@ function App() {
   const openAccountMenu = Boolean(accountMenuAnchorEl);
   const accountMenuId = openAccountMenu ? 'account-popover' : undefined;
 
+  // --- Settings Tab Handler ---
+  const handleSettingsTabChange = (event, newValue) => {
+    setSettingsTab(newValue);
+  };
+
   const handleSignIn = async () => {
+    // ... (keep existing handleSignIn logic) ...
     setError(null);
     setIsLoading(true);
     console.log("Attempting Google sign-in via launchWebAuthFlow...");
@@ -132,12 +170,11 @@ function App() {
     } else {
       console.log("User authenticated, adding dummy messages...");
       const newUserMessage = { id: Date.now(), sender: 'user', text: messageText };
-      // Updated dummy response text
       const magixResponse = { id: Date.now() + 1, sender: 'magix', text: "Sure, let me try to modify that for you." };
       const magixIndicator = { id: Date.now() + 2, sender: 'magix', status: 'processing' };
 
       setMessages(prev => [...prev, newUserMessage, magixResponse, magixIndicator]);
-      setIsChatView(true);
+      setCurrentView('chat'); // Switch to chat view
       setInputValue('');
     }
   };
@@ -158,7 +195,6 @@ function App() {
 
   // --- Render Functions ---
 
-  // Input area for the HOME screen (multi-line)
   const renderHomeInputArea = () => (
     <Box sx={{
       display: 'flex', flexDirection: 'column', p: 1, borderRadius: 3,
@@ -184,37 +220,22 @@ function App() {
     </Box>
   );
 
-  // Input area for the CHAT screen (single-line)
   const renderChatInputArea = () => (
-    // Add horizontal and bottom padding to this container
     <Box sx={{
       display: 'flex', flexDirection: 'row', alignItems: 'center',
-      p: 1,
-      px: 2,
-      pb: 2,
-      borderRadius: 0, // Removed border radius
-      bgcolor: 'grey.100',
-      border: '1px solid #e0e0e0',
-      mt: 'auto'
+      p: 1, px: 2, pb: 2, borderRadius: 0, bgcolor: 'grey.100',
+      border: '1px solid #e0e0e0', mt: 'auto'
     }}>
       <TextField
-        fullWidth
-        multiline={false} // Single line
-        variant="standard"
-        placeholder="Ask Magix..."
-        value={inputValue}
-        onChange={handleInputChange}
-        onKeyDown={handleKeyDown} // Keep Enter key submission
+        fullWidth multiline={false} variant="standard" placeholder="Ask Magix..."
+        value={inputValue} onChange={handleInputChange} onKeyDown={handleKeyDown}
         InputProps={{ disableUnderline: true, sx: { fontSize: '0.9rem' } }}
-        sx={{ mr: 1, '& .MuiInputBase-root': { py: 1 } }} // Adjusted padding/margin
+        sx={{ mr: 1, '& .MuiInputBase-root': { py: 1 } }}
       />
       <IconButton
-        onClick={handleSubmit}
-        disabled={isLoading || !inputValue.trim()}
+        onClick={handleSubmit} disabled={isLoading || !inputValue.trim()}
         sx={{
-          // No longer absolute position
-          bgcolor: 'common.black', color: 'common.white',
-          width: 28, height: 28,
+          bgcolor: 'common.black', color: 'common.white', width: 28, height: 28,
           '&:hover': { bgcolor: 'grey.800' },
           '&.Mui-disabled': { backgroundColor: 'grey.300', color: 'grey.500' }
         }}
@@ -225,12 +246,12 @@ function App() {
   );
 
   const renderHomeScreen = () => (
-    // Add padding here since it's removed from the main container
-    <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', flexGrow: 1 }}>
+    // Removed flexGrow: 1 to allow vertical centering when needed
+    <Box sx={{ p: 2, display: 'flex', flexDirection: 'column' }}>
       <Typography variant="h6" component="h1" sx={{ textAlign: 'center', mb: 2, fontSize: '1.05rem', fontWeight: 600 }}>
         Modify any website 🪄
       </Typography>
-      {renderHomeInputArea()} {/* Use home input */}
+      {renderHomeInputArea()}
       {session && (
         <Box sx={{ flexGrow: 1, overflowY: 'auto', mt: 2 }}>
           <Typography variant="body2" sx={{ mb: 1, fontWeight: 500, color: 'text.secondary' }}>
@@ -245,47 +266,105 @@ function App() {
           </List>
         </Box>
       )}
-    </Box> // Close padding Box for home screen
+    </Box>
   );
 
   const renderChatScreen = () => (
-     // This Box now needs to manage the full height flex layout for chat
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       {/* Fixed Header */}
       <Box sx={{
-        position: 'sticky', // Make header sticky
-        top: 0,             // Stick to the top
-        zIndex: 1,          // Ensure it's above scrolling content
-        bgcolor: 'background.paper', // Give it a background
-        p: 1,               // Add some padding
-        mb: 1,              // Margin below header
-        display: 'flex',
-         justifyContent: 'space-between',
-         alignItems: 'center'
+        position: 'sticky', top: 0, zIndex: 1, bgcolor: 'background.paper',
+        p: 1, mb: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center'
       }}>
-         {/* Profile Icon moved back to main return */}
-         {/* Placeholder for alignment if needed, or adjust justifyContent */}
-         <Box sx={{ width: 28 }} /> {/* Placeholder to balance space-between */}
-         {/* Placeholder Toggle Switch */}
+         <Box sx={{ width: 28 }} /> {/* Placeholder for left spacing */}
          <Switch
-            size="small"
-            checked={true} // Dummy checked state for styling
-            // onChange={handleSomeToggle} // Add handler later
-            inputProps={{ 'aria-label': 'dummy toggle' }}
-            // Apply green styling like in recent list
+            size="small" checked={true} inputProps={{ 'aria-label': 'dummy toggle' }}
             sx={{
               transform: 'scale(0.75)',
-              '& .MuiSwitch-switchBase.Mui-checked': {
-                color: 'green',
-                '&:hover': { backgroundColor: 'rgba(0, 128, 0, 0.08)' },
-              },
-              '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': {
-                backgroundColor: 'green',
-              },
+              '& .MuiSwitch-switchBase.Mui-checked': { color: 'green', '&:hover': { backgroundColor: 'rgba(0, 128, 0, 0.08)' }, },
+              '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { backgroundColor: 'green', },
             }}
          />
       </Box>
-       {/* Account Popover/Dialog */}
+
+      {/* Chat Message Area */}
+      <Box ref={chatContainerRef} sx={{ flexGrow: 1, overflowY: 'auto', p: 2, display: 'flex', flexDirection: 'column', gap: 1 }}>
+        {messages.map((msg) => (
+          <Box key={msg.id} sx={{ alignSelf: msg.sender === 'user' ? 'flex-end' : 'flex-start', maxWidth: '80%' }}>
+            {msg.status === 'processing' ? (
+              <Paper className="shimmer-bubble" elevation={0} sx={{ p: 1, borderRadius: 2, bgcolor: 'grey.200', display: 'flex', alignItems: 'center', gap: 1, overflow: 'hidden', position: 'relative' }}>
+                 <Typography variant="body2" sx={{ fontWeight: 500, color: 'text.secondary', fontSize: '0.9rem' }}>
+                   Doing magix...
+                 </Typography>
+              </Paper>
+            ) : msg.sender === 'user' ? (
+               <Paper elevation={0} sx={{ p: 1.5, borderRadius: 2, bgcolor: 'grey.200' }}>
+                 <Typography variant="body2" sx={{ fontSize: '0.9rem', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                   {msg.text}
+                 </Typography>
+               </Paper>
+            ) : (
+               <Typography variant="body2" sx={{ fontSize: '0.9rem', whiteSpace: 'pre-wrap', wordBreak: 'break-word', alignSelf: 'flex-start' }}>
+                  {msg.text}
+               </Typography>
+            )}
+          </Box>
+        ))}
+        <div ref={chatEndRef} />
+      </Box>
+      {renderChatInputArea()}
+    </Box>
+  );
+
+  const renderAccountSettingsScreen = () => (
+    <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', height: '100%' }}>
+       {/* Header with Back Button */}
+       <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+         <IconButton onClick={() => setCurrentView('home')} size="small">
+           <ArrowBackIcon />
+         </IconButton>
+         <Typography variant="h6" sx={{ ml: 1, fontSize: '1.1rem', fontWeight: 600 }}>
+           Account Settings
+         </Typography>
+       </Box>
+
+       {/* Tabs */}
+       <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
+         <Tabs value={settingsTab} onChange={handleSettingsTabChange} aria-label="account settings tabs">
+           <Tab label="Account Info" {...a11yProps(0)} sx={{ textTransform: 'none', fontSize: '0.9rem' }} />
+           <Tab label="Billing" {...a11yProps(1)} sx={{ textTransform: 'none', fontSize: '0.9rem' }} />
+         </Tabs>
+       </Box>
+
+       {/* Tab Panels */}
+       <TabPanel value={settingsTab} index={0}>
+         <Typography variant="body2">Email: {session?.user?.email || 'N/A'}</Typography>
+         {/* Add other account info here */}
+       </TabPanel>
+       <TabPanel value={settingsTab} index={1}>
+         <Typography variant="body2" sx={{ mb: 1 }}>Monthly Limits: 0/10 messages used.</Typography>
+         <Button variant="outlined" size="small" sx={{ textTransform: 'none', borderRadius: 2 }}>
+           Manage Billing (Dummy)
+         </Button>
+       </TabPanel>
+    </Box>
+  );
+
+  // --- Main Return ---
+  return (
+    <Box sx={{
+      display: 'flex', flexDirection: 'column', height: '100vh',
+      bgcolor: 'background.paper',
+      justifyContent: currentView === 'home' && !session ? 'center' : 'flex-start' // Adjusted centering logic
+    }}>
+      {/* Profile Icon - Rendered based on session AND view, outside view switch */}
+      {session && currentView !== 'settings' && (
+        <IconButton onClick={handleAccountMenuOpen} size="small" sx={{ position: 'absolute', top: 16, left: 16, zIndex: 2 }}>
+           <AccountCircleIcon sx={{ color: 'grey.600', fontSize: '1.25rem' }} />
+        </IconButton>
+      )}
+
+       {/* Account Popover/Dialog - Content depends on current view */}
        <Popover
           id={accountMenuId}
           open={openAccountMenu}
@@ -293,89 +372,49 @@ function App() {
           onClose={handleAccountMenuClose}
           anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
           transformOrigin={{ vertical: 'top', horizontal: 'left'}}
-          // Added borderRadius to paper slotProps
           slotProps={{ paper: { sx: { width: '200px', mt: 1, borderRadius: 2 } } }}
         >
           <List dense>
             <ListItem>
               <ListItemText primary="Monthly messages:" secondary="0/10" />
             </ListItem>
-            {/* Updated onClick for Go to dashboard */}
-            <ListItemButton onClick={() => { setIsChatView(false); handleAccountMenuClose(); }}>
-              <ListItemText primary="Go to dashboard" />
-            </ListItemButton>
-            <ListItemButton onClick={() => { console.log('Account Settings clicked'); handleAccountMenuClose(); }}>
-              <ListItemText primary="Account settings" />
-            </ListItemButton>
+            {/* Conditional Menu Items */}
+            {currentView === 'chat' ? (
+              <ListItemButton onClick={() => { setCurrentView('home'); handleAccountMenuClose(); }}>
+                <ListItemText primary="Go to dashboard" />
+              </ListItemButton>
+            ) : ( // Home or Settings view
+              <ListItemButton onClick={() => { setCurrentView('settings'); handleAccountMenuClose(); }}>
+                <ListItemText primary="Account settings" />
+              </ListItemButton>
+            )}
+             {/* Show settings on chat view too, log out only on home/settings */}
+             {currentView === 'chat' && (
+                 <ListItemButton onClick={() => { setCurrentView('settings'); handleAccountMenuClose(); }}>
+                    <ListItemText primary="Account settings" />
+                 </ListItemButton>
+             )}
+             {currentView !== 'chat' && (
+                 <ListItemButton onClick={() => { supabase.auth.signOut(); handleAccountMenuClose(); }}>
+                   <ListItemText primary="Log out" />
+                 </ListItemButton>
+             )}
           </List>
         </Popover>
 
-      {/* Chat Message Area - Added ref */}
-      <Box ref={chatContainerRef} sx={{ flexGrow: 1, overflowY: 'auto', p: 2, display: 'flex', flexDirection: 'column', gap: 1 }}>
-        {messages.map((msg) => (
-          <Box key={msg.id} sx={{ alignSelf: msg.sender === 'user' ? 'flex-end' : 'flex-start', maxWidth: '80%' }}>
-            {msg.status === 'processing' ? (
-              // Added className for shimmer effect
-              <Paper className="shimmer-bubble" elevation={0} sx={{ p: 1, borderRadius: 2, bgcolor: 'grey.200', display: 'flex', alignItems: 'center', gap: 1, overflow: 'hidden', position: 'relative' }}>
-                 {/* Removed CircularProgress */}
-                 {/* Updated Typography style: removed italic, added medium weight */}
-                 <Typography variant="body2" sx={{ fontWeight: 500, color: 'text.secondary', fontSize: '0.9rem' }}>
-                   Doing magix...
-                 </Typography>
-              </Paper>
-            ) : msg.sender === 'user' ? (
-               // User message bubble (no elevation, grey.200 bg)
-               <Paper elevation={0} sx={{ p: 1.5, borderRadius: 2, bgcolor: 'grey.200' }}>
-                 <Typography variant="body2" sx={{ fontSize: '0.9rem', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                   {msg.text}
-                 </Typography>
-               </Paper>
-            ) : ( // Magix response message (plain text, no bubble) - Removed padding
-               <Typography variant="body2" sx={{ fontSize: '0.9rem', whiteSpace: 'pre-wrap', wordBreak: 'break-word', alignSelf: 'flex-start' }}>
-                  {msg.text}
-               </Typography>
-               // Removed the erroneous closing Paper tag
-            )}
-          </Box>
-        ))}
-        <div ref={chatEndRef} />
-      </Box>
-      {renderChatInputArea()} {/* Use chat input */}
-    </Box> // Close chat screen flex container
-  );
-
-  return (
-    // Main container - Removed padding, ensure full height flex
-    <Box sx={{
-      display: 'flex', flexDirection: 'column', height: '100vh',
-      bgcolor: 'background.paper',
-      justifyContent: !isChatView && !session ? 'center' : 'flex-start'
-    }}>
-      {/* Profile Icon - Rendered based on session, outside view switch */}
-      {session && (
-        <IconButton onClick={handleAccountMenuOpen} size="small" sx={{ position: 'absolute', top: 16, left: 16, zIndex: 2 }}>
-           <AccountCircleIcon sx={{ color: 'grey.600', fontSize: '1.25rem' }} />
-        </IconButton>
-      )}
-
-      {isChatView ? renderChatScreen() : renderHomeScreen()}
+      {/* Main Content Area */}
+      {currentView === 'chat' ? renderChatScreen()
+       : currentView === 'settings' ? renderAccountSettingsScreen()
+       : renderHomeScreen()}
 
       {error && (
-        <Typography color="error" sx={{ mt: 2, textAlign: 'center' }}>
+        <Typography color="error" sx={{ mt: 2, textAlign: 'center', p: 2 }}>
           Error: {error}
         </Typography>
       )}
 
-      {/* Sign Out Button (Only on Home Screen) */}
-      {session && !isChatView && (
-         <button
-           onClick={() => supabase.auth.signOut()}
-           disabled={isLoading}
-           style={{ marginTop: '10px', padding: '10px', backgroundColor: 'grey', color: 'white', border: 'none', cursor: 'pointer', alignSelf: 'center' }}
-          >
-           {isLoading ? 'Signing Out...' : 'Sign Out'}
-         </button>
-       )}
+      {/* Sign Out Button Removed */}
+
     </Box>
   );
 }
