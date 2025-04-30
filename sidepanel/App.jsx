@@ -46,6 +46,13 @@ function a11yProps(index) {
   };
 }
 
+// Placeholder suggestions for animation
+const placeholderSuggestions = [
+  "Hide the promotions tab in gmail",
+  "Remove the shorts section in youtube",
+  "Make twitter dark mode",
+  "Increase font size on wikipedia",
+];
 
 function App() {
   const [session, setSession] = useState(null);
@@ -57,7 +64,13 @@ function App() {
   const chatContainerRef = useRef(null);
   const chatEndRef = useRef(null);
   const [accountMenuAnchorEl, setAccountMenuAnchorEl] = useState(null);
-  const [settingsTab, setSettingsTab] = useState(0); // State for settings tabs
+  const [settingsTab, setSettingsTab] = useState(0);
+
+  // State for placeholder animation
+  const [placeholderIndex, setPlaceholderIndex] = useState(0);
+  const [subIndex, setSubIndex] = useState(0);
+  const [reverse, setReverse] = useState(false);
+  const [animatedPlaceholder, setAnimatedPlaceholder] = useState('');
 
   // --- Authentication Handling ---
   useEffect(() => {
@@ -72,7 +85,7 @@ function App() {
         setIsLoading(false);
         setError(null);
         if (!session) {
-          setCurrentView('home'); // Reset to home on sign out
+          setCurrentView('home');
           setMessages([]);
         }
       }
@@ -87,7 +100,52 @@ function App() {
     if (currentView === 'chat') {
       chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
-  }, [messages, currentView]); // Rerun when view changes or messages update
+  }, [messages, currentView]);
+
+  // --- Placeholder Animation Effect ---
+  useEffect(() => {
+    // Only run animation on home screen
+    if (currentView !== 'home') {
+      // Reset placeholder if navigating away from home
+      setAnimatedPlaceholder(''); // Or set to a default static placeholder if preferred
+      return;
+    }
+
+    // Typing effect
+    if (subIndex < placeholderSuggestions[placeholderIndex].length && !reverse) {
+      const timeout = setTimeout(() => {
+        setAnimatedPlaceholder(prev => prev + placeholderSuggestions[placeholderIndex][subIndex]);
+        setSubIndex(prev => prev + 1);
+      }, 100); // Typing speed
+      return () => clearTimeout(timeout);
+    }
+
+    // Pause at end of typing
+    if (subIndex === placeholderSuggestions[placeholderIndex].length && !reverse) {
+       const timeout = setTimeout(() => {
+         setReverse(true);
+       }, 1500); // Pause duration (1.5 seconds)
+       return () => clearTimeout(timeout);
+    }
+
+    // Deleting effect
+    if (subIndex > 0 && reverse) {
+      const timeout = setTimeout(() => {
+        setAnimatedPlaceholder(prev => prev.slice(0, -1));
+        setSubIndex(prev => prev - 1);
+      }, 50); // Deleting speed
+      return () => clearTimeout(timeout);
+    }
+
+    // Switch to next placeholder after deleting
+    if (subIndex === 0 && reverse) {
+      setReverse(false);
+      setPlaceholderIndex(prev => (prev + 1) % placeholderSuggestions.length);
+      // No timeout here, immediately start typing next one
+    }
+
+  }, [subIndex, placeholderIndex, reverse, currentView]); // Rerun effect when these change or view changes
+
 
   // --- Account Menu Handlers ---
    const handleAccountMenuOpen = (event) => {
@@ -174,7 +232,7 @@ function App() {
       const magixIndicator = { id: Date.now() + 2, sender: 'magix', status: 'processing' };
 
       setMessages(prev => [...prev, newUserMessage, magixResponse, magixIndicator]);
-      setCurrentView('chat'); // Switch to chat view
+      setCurrentView('chat');
       setInputValue('');
     }
   };
@@ -203,7 +261,9 @@ function App() {
     }}>
       <TextField
         fullWidth multiline minRows={2} maxRows={3} variant="standard"
-        placeholder="Ask Magix..." value={inputValue} onChange={handleInputChange} onKeyDown={handleKeyDown}
+        // Use animated placeholder here
+        placeholder={animatedPlaceholder + '|'} // Add cursor effect
+        value={inputValue} onChange={handleInputChange} onKeyDown={handleKeyDown}
         InputProps={{ disableUnderline: true, sx: { fontSize: '0.9rem' } }}
         sx={{ flexGrow: 1, '& .MuiInputBase-root': { py: 0.5 }, mb: 4 }}
       />
@@ -227,7 +287,9 @@ function App() {
       border: '1px solid #e0e0e0', mt: 'auto'
     }}>
       <TextField
-        fullWidth multiline={false} variant="standard" placeholder="Ask Magix..."
+        fullWidth multiline={false} variant="standard"
+        // Static placeholder for chat
+        placeholder="Ask Magix..."
         value={inputValue} onChange={handleInputChange} onKeyDown={handleKeyDown}
         InputProps={{ disableUnderline: true, sx: { fontSize: '0.9rem' } }}
         sx={{ mr: 1, '& .MuiInputBase-root': { py: 1 } }}
@@ -246,7 +308,6 @@ function App() {
   );
 
   const renderHomeScreen = () => (
-    // Removed flexGrow: 1 to allow vertical centering when needed
     <Box sx={{ p: 2, display: 'flex', flexDirection: 'column' }}>
       <Typography variant="h6" component="h1" sx={{ textAlign: 'center', mb: 2, fontSize: '1.05rem', fontWeight: 600 }}>
         Modify any website 🪄
@@ -276,7 +337,7 @@ function App() {
         position: 'sticky', top: 0, zIndex: 1, bgcolor: 'background.paper',
         p: 1, mb: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center'
       }}>
-         <Box sx={{ width: 28 }} /> {/* Placeholder for left spacing */}
+         <Box sx={{ width: 28 }} />
          <Switch
             size="small" checked={true} inputProps={{ 'aria-label': 'dummy toggle' }}
             sx={{
@@ -339,7 +400,6 @@ function App() {
        {/* Tab Panels */}
        <TabPanel value={settingsTab} index={0}>
          <Typography variant="body2">Email: {session?.user?.email || 'N/A'}</Typography>
-         {/* Add other account info here */}
        </TabPanel>
        <TabPanel value={settingsTab} index={1}>
          <Typography variant="body2" sx={{ mb: 1 }}>Monthly Limits: 0/10 messages used.</Typography>
@@ -355,16 +415,16 @@ function App() {
     <Box sx={{
       display: 'flex', flexDirection: 'column', height: '100vh',
       bgcolor: 'background.paper',
-      justifyContent: currentView === 'home' && !session ? 'center' : 'flex-start' // Adjusted centering logic
+      justifyContent: currentView === 'home' && !session ? 'center' : 'flex-start'
     }}>
-      {/* Profile Icon - Rendered based on session AND view, outside view switch */}
+      {/* Profile Icon */}
       {session && currentView !== 'settings' && (
         <IconButton onClick={handleAccountMenuOpen} size="small" sx={{ position: 'absolute', top: 16, left: 16, zIndex: 2 }}>
            <AccountCircleIcon sx={{ color: 'grey.600', fontSize: '1.25rem' }} />
         </IconButton>
       )}
 
-       {/* Account Popover/Dialog - Content depends on current view */}
+       {/* Account Popover */}
        <Popover
           id={accountMenuId}
           open={openAccountMenu}
@@ -378,17 +438,15 @@ function App() {
             <ListItem>
               <ListItemText primary="Monthly messages:" secondary="0/10" />
             </ListItem>
-            {/* Conditional Menu Items */}
             {currentView === 'chat' ? (
               <ListItemButton onClick={() => { setCurrentView('home'); handleAccountMenuClose(); }}>
                 <ListItemText primary="Go to dashboard" />
               </ListItemButton>
-            ) : ( // Home or Settings view
+            ) : (
               <ListItemButton onClick={() => { setCurrentView('settings'); handleAccountMenuClose(); }}>
                 <ListItemText primary="Account settings" />
               </ListItemButton>
             )}
-             {/* Show settings on chat view too, log out only on home/settings */}
              {currentView === 'chat' && (
                  <ListItemButton onClick={() => { setCurrentView('settings'); handleAccountMenuClose(); }}>
                     <ListItemText primary="Account settings" />
@@ -412,8 +470,6 @@ function App() {
           Error: {error}
         </Typography>
       )}
-
-      {/* Sign Out Button Removed */}
 
     </Box>
   );
