@@ -59,6 +59,8 @@ const placeholderSuggestions = [
   "Increase font size on wikipedia",
 ];
 
+// Removed test CSS constant
+
 function App() {
   const [session, setSession] = useState(null);
   const [error, setError] = useState(null);
@@ -240,7 +242,9 @@ function App() {
     const messageText = inputValue.trim();
     if (!messageText) return;
 
-    console.log("Submitted:", messageText);
+    console.log("handleSubmit triggered with text:", messageText);
+
+    // Removed test script trigger logic
 
     if (!session) {
       console.log("User not authenticated, triggering sign-in...");
