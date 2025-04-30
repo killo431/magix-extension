@@ -47,8 +47,13 @@ function App() {
 
   // --- Scroll to bottom effect ---
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+    // Only scroll if the last message isn't the initial 'processing' indicator
+    // or if the view isn't already scrolled near the bottom (more complex check omitted for now)
+    const lastMessage = messages[messages.length - 1];
+    if (lastMessage && lastMessage.status !== 'processing') {
+        chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [messages]); // Scroll only when messages array content changes meaningfully
 
   const handleSignIn = async () => {
     setError(null);
@@ -169,9 +174,9 @@ function App() {
   // Input area for the CHAT screen (single-line)
   const renderChatInputArea = () => (
     <Box sx={{
-      display: 'flex', flexDirection: 'row', alignItems: 'center', // Changed to row
+      display: 'flex', flexDirection: 'row', alignItems: 'center',
       p: 1, borderRadius: 3, bgcolor: 'grey.100', border: '1px solid #e0e0e0',
-      mt: 'auto' // Push to bottom
+      // Removed mt: 'auto' - flexGrow on message area should handle positioning
     }}>
       <TextField
         fullWidth
@@ -225,9 +230,43 @@ function App() {
 
   const renderChatScreen = () => (
     <>
-      {/* Chat Message Area - Ensure it grows and scrolls */}
-      {/* Added pt: 4 to account for absolutely positioned icon */}
-      <Box sx={{ flexGrow: 1, overflowY: 'auto', mb: 2, display: 'flex', flexDirection: 'column', gap: 1, pt: 4 }}>
+      {/* Fixed Header */}
+      <Box sx={{
+        position: 'sticky', // Make header sticky
+        top: 0,             // Stick to the top
+        zIndex: 1,          // Ensure it's above scrolling content
+        bgcolor: 'background.paper', // Give it a background
+        p: 1,               // Add some padding
+        mb: 1,              // Margin below header
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center'
+        // Removed borderBottom
+      }}>
+         {/* Profile Icon */}
+         <AccountCircleIcon sx={{ color: 'grey.600', fontSize: '1.25rem' }} />
+         {/* Placeholder Toggle Switch */}
+         <Switch
+            size="small"
+            checked={true} // Dummy checked state for styling
+            // onChange={handleSomeToggle} // Add handler later
+            inputProps={{ 'aria-label': 'dummy toggle' }}
+            // Apply green styling like in recent list
+            sx={{
+              transform: 'scale(0.75)',
+              '& .MuiSwitch-switchBase.Mui-checked': {
+                color: 'green',
+                '&:hover': { backgroundColor: 'rgba(0, 128, 0, 0.08)' },
+              },
+              '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': {
+                backgroundColor: 'green',
+              },
+            }}
+         />
+      </Box>
+
+      {/* Chat Message Area - Ensure it grows and scrolls below header */}
+      <Box sx={{ flexGrow: 1, overflowY: 'auto', mb: 2, display: 'flex', flexDirection: 'column', gap: 1, px: 1 }}> {/* Added horizontal padding */}
         {messages.map((msg) => (
           <Box key={msg.id} sx={{ alignSelf: msg.sender === 'user' ? 'flex-end' : 'flex-start', maxWidth: '80%' }}>
             {msg.status === 'processing' ? (
@@ -261,9 +300,7 @@ function App() {
       bgcolor: 'background.paper',
       justifyContent: !isChatView && !session ? 'center' : 'flex-start'
     }}>
-      {session && (
-        <AccountCircleIcon sx={{ color: 'grey.600', position: 'absolute', top: 16, left: 16, fontSize: '1.25rem' }} />
-      )}
+      {/* Profile Icon is now inside renderChatScreen header */}
 
       {isChatView ? renderChatScreen() : renderHomeScreen()}
 
