@@ -59,12 +59,11 @@ const placeholderSuggestions = [
   "Increase font size on wikipedia",
 ];
 
-// Removed test CSS constant
 
 function App() {
   const [session, setSession] = useState(null);
   const [error, setError] = useState(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(false); // Combined loading state
   const [inputValue, setInputValue] = useState('');
   const [currentView, setCurrentView] = useState('home'); // 'home', 'chat', 'settings'
   const [messages, setMessages] = useState([]);
@@ -84,14 +83,13 @@ function App() {
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
-      // TODO: Fetch user profile/name if available
       console.log("Initial session:", session);
     });
     const { data: authListener } = supabase.auth.onAuthStateChange(
       (_event, session) => {
         setSession(session);
         console.log("Auth state changed:", _event, session);
-        setIsLoading(false);
+        setIsLoading(false); // Stop loading on auth change
         setError(null);
         if (!session) {
           setCurrentView('home');
@@ -115,45 +113,29 @@ function App() {
 
   // --- Placeholder Animation Effect (Revised Timer Logic) ---
   useEffect(() => {
-    // Only run animation on home screen
     if (currentView !== 'home') {
-      setAnimatedPlaceholder(''); // Reset placeholder if navigating away
-      return; // Stop the effect if not on home screen
+      setAnimatedPlaceholder('');
+      return;
     }
-
-    let timeoutId; // Define timer ID variable
-
-    // Typing effect
+    let timeoutId;
     if (subIndex < placeholderSuggestions[placeholderIndex].length && !reverse) {
       timeoutId = setTimeout(() => {
         setAnimatedPlaceholder(prev => prev + placeholderSuggestions[placeholderIndex][subIndex]);
         setSubIndex(prev => prev + 1);
-      }, 100); // Typing speed
-    }
-    // Pause at end of typing
-    else if (subIndex === placeholderSuggestions[placeholderIndex].length && !reverse) {
-       timeoutId = setTimeout(() => {
-         setReverse(true);
-       }, 1500); // Pause duration
-    }
-    // Deleting effect
-    else if (subIndex > 0 && reverse) {
+      }, 100);
+    } else if (subIndex === placeholderSuggestions[placeholderIndex].length && !reverse) {
+       timeoutId = setTimeout(() => { setReverse(true); }, 1500);
+    } else if (subIndex > 0 && reverse) {
       timeoutId = setTimeout(() => {
         setAnimatedPlaceholder(prev => prev.slice(0, -1));
         setSubIndex(prev => prev - 1);
-      }, 50); // Deleting speed
-    }
-    // Switch to next placeholder after deleting
-    else if (subIndex === 0 && reverse) {
-      // No timeout needed here, just update state for the next cycle
+      }, 50);
+    } else if (subIndex === 0 && reverse) {
       setReverse(false);
       setPlaceholderIndex(prev => (prev + 1) % placeholderSuggestions.length);
     }
-
-    // Cleanup function clears the single timer
     return () => clearTimeout(timeoutId);
-
-  }, [subIndex, placeholderIndex, reverse, currentView]); // Dependencies remain the same
+  }, [subIndex, placeholderIndex, reverse, currentView]);
 
 
   // --- Account Menu Handlers ---
@@ -185,9 +167,8 @@ function App() {
 
 
   const handleSignIn = async () => {
-    // ... (keep existing handleSignIn logic) ...
     setError(null);
-    setIsLoading(true);
+    setIsLoading(true); // Start loading for auth
     console.log("Attempting Google sign-in via launchWebAuthFlow...");
     try {
       const manifest = chrome.runtime.getManifest();
@@ -220,6 +201,7 @@ function App() {
               provider: 'google', token: idToken,
             });
             if (supabaseError) throw supabaseError;
+            // Auth state change listener will handle setting session and isLoading=false
           } catch (parseError) {
             setError(`Sign-in failed: ${parseError.message}`);
             setIsLoading(false);
@@ -237,27 +219,158 @@ function App() {
     setInputValue(event.target.value);
   };
 
-  const handleSubmit = () => {
+  // --- Submit Handler (Updated for Edge Function) ---
+  const handleSubmit = async () => { // Made async
     if (isLoading) return;
     const messageText = inputValue.trim();
     if (!messageText) return;
 
     console.log("handleSubmit triggered with text:", messageText);
 
-    // Removed test script trigger logic
-
     if (!session) {
       console.log("User not authenticated, triggering sign-in...");
-      handleSignIn();
+      handleSignIn(); // Auth loading is handled by handleSignIn
     } else {
-      console.log("User authenticated, adding dummy messages...");
-      const newUserMessage = { id: Date.now(), sender: 'user', text: messageText };
-      const magixResponse = { id: Date.now() + 1, sender: 'magix', text: "Sure, let me try to modify that for you." };
-      const magixIndicator = { id: Date.now() + 2, sender: 'magix', status: 'processing' };
+      console.log("User authenticated, calling Edge Function...");
+      setIsLoading(true); // Start loading for API call
+      setError(null); // Clear previous errors
 
-      setMessages(prev => [...prev, newUserMessage, magixResponse, magixIndicator]);
+      // Add user message immediately
+      // const newUserMessage = { id: Date.now(), sender: 'user', text: messageText }; // Removed duplicate
+      // Add processing indicator immediately
+      // const magixIndicator = { id: Date.now() + 1, sender: 'magix', status: 'processing' }; // Removed - not used in new logic
+      // Add user message immediately
+      const newUserMessage = { id: Date.now(), sender: 'user', text: messageText };
+      setMessages(prev => [...prev, newUserMessage]);
       setCurrentView('chat');
-      setInputValue('');
+      setInputValue(''); // Clear input
+
+      try {
+        // --- Step 1: Call analyze-prompt ---
+        console.log("Calling analyze-prompt...");
+        const { data: analysisData, error: analysisError } = await supabase.functions.invoke(
+          'analyze-prompt',
+          { body: { prompt: messageText } }
+        );
+
+        if (analysisError) {
+          throw new Error(`Analysis failed: ${analysisError.message}`);
+        }
+
+        if (!analysisData || typeof analysisData.response !== 'string' || typeof analysisData.is_code_needed !== 'boolean') {
+          console.error("Invalid response structure from analyze-prompt:", analysisData);
+          throw new Error("Received an unexpected analysis response from the AI.");
+        }
+
+        console.log("Analysis response:", analysisData);
+
+        // Add the textual response from Magix immediately
+        const magixTextResponse = { id: Date.now() + 1, sender: 'magix', text: analysisData.response };
+        setMessages(prev => [...prev, magixTextResponse]);
+
+        // --- Step 2: Conditionally call generate-script ---
+        if (analysisData.is_code_needed) {
+          console.log("Code is needed, calling generate-script...");
+          // Note: isLoading is already true
+
+          const { data: scriptData, error: scriptError } = await supabase.functions.invoke(
+            'generate-script',
+            { body: { prompt: messageText } } // Send original prompt again
+          );
+
+          if (scriptError) {
+            throw new Error(`Code generation failed: ${scriptError.message}`);
+          }
+
+          if (scriptData && scriptData.generatedCode) {
+            console.log("Generated code response:", scriptData.generatedCode);
+            const generatedCode = scriptData.generatedCode; // Use the code from the second function
+
+            // --- Inject and Save Logic (Moved inside the conditional block) ---
+            try {
+              // Get active tab ID first
+            // const [currentTab] = await chrome.tabs.query({ active: true, currentWindow: true }); // Removed duplicate
+
+              const [currentTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+
+              if (!currentTab?.id) {
+                throw new Error("Could not find active tab to inject into.");
+              }
+              const targetTabId = currentTab.id;
+
+              let injectionType = 'JS'; // Default guess
+              // Simple check for CSS (contains curly braces)
+              if (generatedCode.includes('{') && generatedCode.includes('}')) {
+                injectionType = 'CSS';
+              }
+
+              console.log(`Detected type: ${injectionType}. Injecting directly...`);
+
+              // Inject directly from side panel
+              if (injectionType === 'CSS') {
+                await chrome.scripting.insertCSS({
+                  target: { tabId: targetTabId },
+                  css: generatedCode
+                });
+                console.log("CSS injected directly.");
+              } else {
+                await chrome.scripting.executeScript({
+                  target: { tabId: targetTabId },
+                  func: (codeToRun) => { // Function to execute in target tab
+                     try { eval(codeToRun); } catch(e) { console.error("Eval error in target tab:", e); }
+                  },
+                  args: [generatedCode],
+                  world: 'MAIN'
+                });
+                console.log("JS executed directly.");
+              }
+
+              // Save to Supabase
+              console.log("Attempting to save script to Supabase...");
+              const { error: insertError } = await supabase
+                .from('scripts')
+                .insert({
+                  user_id: session.user.id,
+                  code: generatedCode, // Save the generated code
+                  title: messageText.substring(0, 50) + (messageText.length > 50 ? '...' : ''), // Basic title from prompt
+                  domain_pattern: '*', // Placeholder - needs proper domain detection later
+                  // is_active defaults to true in DB schema
+                });
+
+              if (insertError) {
+                console.error("Error saving script to Supabase:", insertError);
+                // Optionally inform the user, though the script might have injected
+                setError(`Failed to save script: ${insertError.message}`); // Set error state
+              } else {
+                console.log("Script saved to Supabase successfully.");
+              }
+
+            } catch (injectSaveError) {
+               console.error("Error during injection sending or saving:", injectSaveError);
+               // Set error state
+               setError(`Error processing script: ${injectSaveError.message}`);
+            }
+            // --- End Inject and Save Logic ---
+
+          } else {
+            // Handle cases where generate-script succeeded but didn't return expected data
+            console.error("generate-script returned unexpected data:", scriptData);
+            throw new Error("Received unexpected code format from the AI.");
+          }
+        } else {
+          console.log("Code not needed based on analysis.");
+          // No further action needed if code is not required
+        }
+
+      } catch (err) {
+        console.error("Error during Magix processing:", err);
+        setError(`Error: ${err.message}`); // Set the error state
+        // Add error message to chat
+        const errorResponse = { id: Date.now() + 2, sender: 'magix', text: `Sorry, an error occurred: ${err.message}` };
+        setMessages(prev => [...prev, errorResponse]);
+      } finally {
+        setIsLoading(false); // Stop loading regardless of outcome
+      }
     }
   };
 
@@ -289,6 +402,7 @@ function App() {
         value={inputValue} onChange={handleInputChange} onKeyDown={handleKeyDown}
         InputProps={{ disableUnderline: true, sx: { fontSize: '0.9rem' } }}
         sx={{ flexGrow: 1, '& .MuiInputBase-root': { py: 0.5 }, mb: 4 }}
+        disabled={isLoading} // Disable input while loading
       />
       <IconButton
         onClick={handleSubmit} disabled={isLoading || !inputValue.trim()}
@@ -298,7 +412,7 @@ function App() {
           '&.Mui-disabled': { backgroundColor: 'grey.300', color: 'grey.500' }
         }}
       >
-        <ArrowUpwardIcon sx={{ fontSize: '1rem' }} />
+        {isLoading ? <CircularProgress size={16} sx={{ color: 'white' }}/> : <ArrowUpwardIcon sx={{ fontSize: '1rem' }} />}
       </IconButton>
     </Box>
   );
@@ -314,6 +428,7 @@ function App() {
         value={inputValue} onChange={handleInputChange} onKeyDown={handleKeyDown}
         InputProps={{ disableUnderline: true, sx: { fontSize: '0.9rem' } }}
         sx={{ mr: 1, '& .MuiInputBase-root': { py: 1 } }}
+        disabled={isLoading} // Disable input while loading
       />
       <IconButton
         onClick={handleSubmit} disabled={isLoading || !inputValue.trim()}
@@ -323,7 +438,7 @@ function App() {
           '&.Mui-disabled': { backgroundColor: 'grey.300', color: 'grey.500' }
         }}
       >
-        <ArrowUpwardIcon sx={{ fontSize: '1rem' }} />
+         {isLoading ? <CircularProgress size={16} sx={{ color: 'white' }}/> : <ArrowUpwardIcon sx={{ fontSize: '1rem' }} />}
       </IconButton>
     </Box>
   );

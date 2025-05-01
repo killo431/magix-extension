@@ -8,7 +8,6 @@ chrome.action.onClicked.addListener((tab) => {
 // Optional: Add a listener for when the extension is first installed or updated
 chrome.runtime.onInstalled.addListener(() => {
   console.log('Magix extension installed or updated.');
-  // You could potentially set default storage values here
 });
 
 // Listener for messages from content scripts or other parts of the extension
@@ -16,7 +15,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log('Background script received message:', message);
 
   if (message.action === "openSidePanel") {
-    // Ensure the message came from a tab (content script)
     if (sender.tab) {
       console.log(`Opening side panel for tab ${sender.tab.id}...`);
       chrome.sidePanel.open({ windowId: sender.tab.windowId });
@@ -27,12 +25,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
     return false; // Synchronous response
   }
-  // Removed the injectCSS handler entirely
+  // Removed injectCSS and injectJS handlers as injection is now done from sidepanel
 
   // Default case if no action matches
   console.log("Message action not recognized or handled:", message.action);
   sendResponse({ status: "Unknown action."});
-  return false; // No async operation in default case
+  return false;
 
 }); // End of onMessage listener
 
