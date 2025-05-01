@@ -270,106 +270,122 @@ function App() {
 
         // --- Step 2: Conditionally call generate-script ---
         if (analysisData.is_code_needed) {
-          console.log("Code is needed, calling generate-script...");
-          // Note: isLoading is already true
+          console.log("Code is needed, showing indicator and calling generate-script...");
+          // Add processing indicator before the second call
+          const processingMsgId = Date.now() + 2; // Unique ID for the indicator
+          const magixIndicator = { id: processingMsgId, sender: 'magix', status: 'processing' };
+          setMessages(prev => [...prev, magixIndicator]);
 
-          const { data: scriptData, error: scriptError } = await supabase.functions.invoke(
-            'generate-script',
-            { body: { prompt: messageText } } // Send original prompt again
-          );
+          try {
+            const { data: scriptData, error: scriptError } = await supabase.functions.invoke(
+              'generate-script',
+              { body: { prompt: messageText } } // Send original prompt again
+            );
 
-          if (scriptError) {
-            throw new Error(`Code generation failed: ${scriptError.message}`);
-          }
-
-          if (scriptData && scriptData.generatedCode) {
-            console.log("Generated code response:", scriptData.generatedCode);
-            const generatedCode = scriptData.generatedCode; // Use the code from the second function
-
-            // --- Inject and Save Logic (Moved inside the conditional block) ---
-            try {
-              // Get active tab ID first
-            // const [currentTab] = await chrome.tabs.query({ active: true, currentWindow: true }); // Removed duplicate
-
-              const [currentTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-
-              if (!currentTab?.id) {
-                throw new Error("Could not find active tab to inject into.");
-              }
-              const targetTabId = currentTab.id;
-
-              let injectionType = 'JS'; // Default guess
-              // Simple check for CSS (contains curly braces)
-              if (generatedCode.includes('{') && generatedCode.includes('}')) {
-                injectionType = 'CSS';
-              }
-
-              console.log(`Detected type: ${injectionType}. Injecting directly...`);
-
-              // Inject directly from side panel
-              if (injectionType === 'CSS') {
-                await chrome.scripting.insertCSS({
-                  target: { tabId: targetTabId },
-                  css: generatedCode
-                });
-                console.log("CSS injected directly.");
-              } else {
-                await chrome.scripting.executeScript({
-                  target: { tabId: targetTabId },
-                  func: (codeToRun) => { // Function to execute in target tab
-                     try { eval(codeToRun); } catch(e) { console.error("Eval error in target tab:", e); }
-                  },
-                  args: [generatedCode],
-                  world: 'MAIN'
-                });
-                console.log("JS executed directly.");
-              }
-
-              // Save to Supabase
-              console.log("Attempting to save script to Supabase...");
-              const { error: insertError } = await supabase
-                .from('scripts')
-                .insert({
-                  user_id: session.user.id,
-                  code: generatedCode, // Save the generated code
-                  title: messageText.substring(0, 50) + (messageText.length > 50 ? '...' : ''), // Basic title from prompt
-                  domain_pattern: '*', // Placeholder - needs proper domain detection later
-                  // is_active defaults to true in DB schema
-                });
-
-              if (insertError) {
-                console.error("Error saving script to Supabase:", insertError);
-                // Optionally inform the user, though the script might have injected
-                setError(`Failed to save script: ${insertError.message}`); // Set error state
-              } else {
-                console.log("Script saved to Supabase successfully.");
-              }
-
-            } catch (injectSaveError) {
-               console.error("Error during injection sending or saving:", injectSaveError);
-               // Set error state
-               setError(`Error processing script: ${injectSaveError.message}`);
+            if (scriptError) {
+              throw new Error(`Code generation failed: ${scriptError.message}`);
             }
-            // --- End Inject and Save Logic ---
 
-          } else {
-            // Handle cases where generate-script succeeded but didn't return expected data
-            console.error("generate-script returned unexpected data:", scriptData);
-            throw new Error("Received unexpected code format from the AI.");
+            if (scriptData && scriptData.generatedCode) {
+              console.log("Generated code response:", scriptData.generatedCode);
+              const generatedCode = scriptData.generatedCode; // Use the code from the second function
+
+              // --- Inject and Save Logic (Moved inside the conditional block) ---
+              // Note: The try/catch for injection/saving is nested within the try for generate-script
+              try {
+                // Get active tab ID first
+                // const [currentTab] = await chrome.tabs.query({ active: true, currentWindow: true }); // Removed duplicate
+
+                const [currentTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+
+                if (!currentTab?.id) {
+                  throw new Error("Could not find active tab to inject into.");
+                }
+                const targetTabId = currentTab.id;
+
+                let injectionType = 'JS'; // Default guess
+                // Simple check for CSS (contains curly braces)
+                if (generatedCode.includes('{') && generatedCode.includes('}')) {
+                  injectionType = 'CSS';
+                }
+
+                console.log(`Detected type: ${injectionType}. Injecting directly...`);
+
+                // Inject directly from side panel
+                if (injectionType === 'CSS') {
+                  await chrome.scripting.insertCSS({
+                    target: { tabId: targetTabId },
+                    css: generatedCode
+                  });
+                  console.log("CSS injected directly.");
+                } else {
+                  await chrome.scripting.executeScript({
+                    target: { tabId: targetTabId },
+                    func: (codeToRun) => { // Function to execute in target tab
+                       try { eval(codeToRun); } catch(e) { console.error("Eval error in target tab:", e); }
+                    },
+                    args: [generatedCode],
+                    world: 'MAIN'
+                  });
+                  console.log("JS executed directly.");
+                }
+
+                // Save to Supabase
+                console.log("Attempting to save script to Supabase...");
+                const { error: insertError } = await supabase
+                  .from('scripts')
+                  .insert({
+                    user_id: session.user.id,
+                    code: generatedCode, // Save the generated code
+                    title: messageText.substring(0, 50) + (messageText.length > 50 ? '...' : ''), // Basic title from prompt
+                    domain_pattern: '*', // Placeholder - needs proper domain detection later
+                    // is_active defaults to true in DB schema
+                  });
+
+                if (insertError) {
+                  console.error("Error saving script to Supabase:", insertError);
+                  // Optionally inform the user, though the script might have injected
+                  setError(`Failed to save script: ${insertError.message}`); // Set error state
+                } else {
+                  console.log("Script saved to Supabase successfully.");
+                }
+
+              } catch (injectSaveError) {
+                 console.error("Error during injection sending or saving:", injectSaveError);
+                 // Set error state
+                 setError(`Error processing script: ${injectSaveError.message}`);
+              }
+              // --- End Inject and Save Logic ---
+
+            } else {
+              // Handle cases where generate-script succeeded but didn't return expected data
+              console.error("generate-script returned unexpected data:", scriptData);
+              throw new Error("Received unexpected code format from the AI.");
+            }
+          } catch (scriptGenError) {
+             // Catch errors specifically from the generate-script call or subsequent logic
+             console.error("Error during script generation/injection:", scriptGenError);
+             setError(`Error: ${scriptGenError.message}`); // Set the error state
+             // Add error message to chat
+             const errorResponse = { id: Date.now() + 3, sender: 'magix', text: `Sorry, an error occurred during code generation: ${scriptGenError.message}` };
+             setMessages(prev => [...prev, errorResponse]);
+          } finally {
+             // Remove processing indicator regardless of success/failure of the second step
+             setMessages(prev => prev.filter(msg => msg.id !== processingMsgId));
           }
         } else {
           console.log("Code not needed based on analysis.");
           // No further action needed if code is not required
         }
 
-      } catch (err) {
-        console.error("Error during Magix processing:", err);
+      } catch (err) { // This outer catch handles errors from analyze-prompt or unexpected structure issues
+        console.error("Error during Magix processing (outer):", err);
         setError(`Error: ${err.message}`); // Set the error state
         // Add error message to chat
-        const errorResponse = { id: Date.now() + 2, sender: 'magix', text: `Sorry, an error occurred: ${err.message}` };
+        const errorResponse = { id: Date.now() + 4, sender: 'magix', text: `Sorry, an error occurred: ${err.message}` };
         setMessages(prev => [...prev, errorResponse]);
       } finally {
-        setIsLoading(false); // Stop loading regardless of outcome
+        setIsLoading(false); // Stop loading regardless of outcome (covers both steps)
       }
     }
   };
