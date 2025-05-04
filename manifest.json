@@ -8,7 +8,8 @@
     "scripting",
     "sidePanel",
     "storage",
-    "identity"
+    "identity",
+    "userScripts"
   ],
   "host_permissions": [
     "<all_urls>"

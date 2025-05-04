@@ -22,6 +22,7 @@ import Divider from '@mui/material/Divider';
 import Link from '@mui/material/Link';
 import Chip from '@mui/material/Chip'; // For Pro User pill
 import LinearProgress from '@mui/material/LinearProgress'; // For usage bar
+import ContentCopyIcon from '@mui/icons-material/ContentCopy'; // Import Copy icon
 
 // TabPanel component for settings screen
 function TabPanel(props) {
@@ -211,9 +212,8 @@ function App() {
     } catch (error) {
       setError(`Sign-in failed: ${error.message}`);
       setIsLoading(false);
-    }
-  };
-
+       }
+   }; // <-- Added missing closing brace here
   // --- Input Handling ---
   const handleInputChange = (event) => {
     setInputValue(event.target.value);
@@ -235,10 +235,6 @@ function App() {
       setIsLoading(true); // Start loading for API call
       setError(null); // Clear previous errors
 
-      // Add user message immediately
-      // const newUserMessage = { id: Date.now(), sender: 'user', text: messageText }; // Removed duplicate
-      // Add processing indicator immediately
-      // const magixIndicator = { id: Date.now() + 1, sender: 'magix', status: 'processing' }; // Removed - not used in new logic
       // Add user message immediately
       const newUserMessage = { id: Date.now(), sender: 'user', text: messageText };
       setMessages(prev => [...prev, newUserMessage]);
@@ -294,8 +290,6 @@ function App() {
               // Note: The try/catch for injection/saving is nested within the try for generate-script
               try {
                 // Get active tab ID first
-                // const [currentTab] = await chrome.tabs.query({ active: true, currentWindow: true }); // Removed duplicate
-
                 const [currentTab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
                 if (!currentTab?.id) {
@@ -303,55 +297,75 @@ function App() {
                 }
                 const targetTabId = currentTab.id;
 
-                let injectionType = 'JS'; // Default guess
-                // Simple check for CSS (contains curly braces)
-                if (generatedCode.includes('{') && generatedCode.includes('}')) {
-                  injectionType = 'CSS';
-                }
+                // Refined check for JS vs CSS
+                let injectionType = 'CSS'; // Default to CSS
+                const strongJsKeywords = [
+                  'function', 'const', 'let', 'var', 'document', 'window',
+                  '=>', 'addEventListener', 'MutationObserver', 'async', 'await',
+                  'class ', 'import ', 'export ', '.log', '.error', 'fetch', 'try', 'catch'
+                 ]; // Using stronger, less ambiguous JS indicators
 
-                console.log(`Detected type: ${injectionType}. Injecting directly...`);
+                // If the code contains strong JS indicators, classify as JS
+                if (strongJsKeywords.some(keyword => generatedCode.includes(keyword))) {
+                   injectionType = 'JS';
+                }
+                // If no strong JS indicators found, assume CSS.
+                // This relies on the AI providing either JS or CSS as requested.
+
+                console.log(`Detected type: ${injectionType}.`);
 
                 // Inject directly from side panel
                 if (injectionType === 'CSS') {
+                  console.log("Injecting CSS directly...");
                   await chrome.scripting.insertCSS({
                     target: { tabId: targetTabId },
                     css: generatedCode
                   });
                   console.log("CSS injected directly.");
-                } else {
-                  await chrome.scripting.executeScript({
-                    target: { tabId: targetTabId },
-                    func: (codeToRun) => { // Function to execute in target tab
-                       try { eval(codeToRun); } catch(e) { console.error("Eval error in target tab:", e); }
-                    },
-                    args: [generatedCode],
-                    world: 'MAIN'
-                  });
-                  console.log("JS executed directly.");
-                }
+                  // Save CSS script immediately
+                  saveScriptToSupabase(session.user.id, generatedCode, messageText, currentTab.url);
 
-                // Save to Supabase
-                console.log("Attempting to save script to Supabase...");
-                const { error: insertError } = await supabase
-                  .from('scripts')
-                  .insert({
-                    user_id: session.user.id,
-                    code: generatedCode, // Save the generated code
-                    title: messageText.substring(0, 50) + (messageText.length > 50 ? '...' : ''), // Basic title from prompt
-                    domain_pattern: '*', // Placeholder - needs proper domain detection later
-                    // is_active defaults to true in DB schema
-                  });
+                } else { // injectionType === 'JS'
+                  // Clean the generated code: remove markdown backticks and language identifier
+                  const cleanedCode = generatedCode.replace(/^```javascript\n/, '').replace(/\n```$/, '');
+                  console.log("Cleaned JS code:", cleanedCode); // Log the cleaned code
 
-                if (insertError) {
-                  console.error("Error saving script to Supabase:", insertError);
-                  // Optionally inform the user, though the script might have injected
-                  setError(`Failed to save script: ${insertError.message}`); // Set error state
-                } else {
-                  console.log("Script saved to Supabase successfully.");
+                  // Send code to the background script for registration via userScripts API
+                  console.log("Sending REGISTER_USER_SCRIPT message to background script...");
+                  chrome.runtime.sendMessage(
+                    // Add the targetUrl and send the cleaned code
+                    { type: 'REGISTER_USER_SCRIPT', code: cleanedCode, targetUrl: currentTab.url },
+                    (response) => {
+                      const lastError = chrome.runtime.lastError;
+                      if (lastError) {
+                        console.error("Error registering script via background:", lastError.message);
+                        setError(`Failed to register script: ${lastError.message}`);
+                        // Optionally add a message to the chat indicating failure
+                        const errorMsg = { id: Date.now() + 5, sender: 'magix', text: `Error: Could not apply the script changes (${lastError.message}).` };
+                        setMessages(prev => [...prev, errorMsg]);
+                      } else if (response && !response.success) {
+                        console.error("Background script reported error during registration:", response.error);
+                        setError(`Failed to register script: ${response.error}`);
+                        const errorMsg = { id: Date.now() + 5, sender: 'magix', text: `Error: Could not apply the script changes (${response.error}).` };
+                        setMessages(prev => [...prev, errorMsg]);
+                      } else if (response && response.success) {
+                        console.log("Background script confirmed successful registration:", response.scriptId);
+                        // Save JS script only after successful registration confirmation - use cleanedCode here too? Or original? Let's save the original for now.
+                        saveScriptToSupabase(session.user.id, generatedCode, messageText, currentTab.url); // Still save original code with markdown
+                        // Optionally add a success message to chat
+                        // const successMsg = { id: Date.now() + 6, sender: 'magix', text: "Script changes applied successfully!" };
+                        // setMessages(prev => [...prev, successMsg]);
+                      } else {
+                        // Handle unexpected response from background script
+                        console.warn("Unexpected response from background script during registration:", response);
+                        setError("Received an unexpected response while registering the script.");
+                      }
+                    }
+                  );
                 }
 
               } catch (injectSaveError) {
-                 console.error("Error during injection sending or saving:", injectSaveError);
+                 console.error("Error during CSS injection or sending message to background:", injectSaveError);
                  // Set error state
                  setError(`Error processing script: ${injectSaveError.message}`);
               }
@@ -389,6 +403,41 @@ function App() {
       }
     }
   };
+
+  // Helper function to save script details
+  const saveScriptToSupabase = async (userId, code, promptText, tabUrl) => {
+      console.log("Attempting to save script to Supabase...");
+      let domain = '*'; // Default fallback
+      try {
+        if (tabUrl && !tabUrl.startsWith('chrome://')) {
+           const urlObj = new URL(tabUrl);
+           domain = urlObj.hostname;
+        } else {
+           console.log("Cannot extract domain from chrome:// URL or invalid URL:", tabUrl);
+        }
+      } catch (urlError) {
+         console.error("Error parsing tab URL for domain:", urlError);
+      }
+      console.log(`Using domain: ${domain}`);
+
+      const { error: insertError } = await supabase
+        .from('scripts')
+        .insert({
+          user_id: userId,
+          code: code,
+          title: promptText.substring(0, 50) + (promptText.length > 50 ? '...' : ''), // Basic title from prompt
+          domain_pattern: domain, // Use extracted domain
+          // is_active defaults to true in DB schema
+        });
+
+      if (insertError) {
+        console.error("Error saving script to Supabase:", insertError);
+        setError(`Failed to save script: ${insertError.message}`); // Set error state
+      } else {
+        console.log("Script saved to Supabase successfully.");
+      }
+  };
+
 
   const handleKeyDown = (event) => {
     if (event.key === 'Enter' && !event.shiftKey) {
@@ -470,6 +519,7 @@ function App() {
           <Typography variant="body2" sx={{ mb: 1, fontWeight: 500, color: 'text.secondary' }}>
             Recent:
           </Typography>
+          {/* --- Test Button REMOVED --- */}
           <List dense sx={{ pt: 0 }}>
             {recentItems.map((item) => (
               <ListItem key={item.id} secondaryAction={ <Switch edge="end" checked={item.active} inputProps={{ 'aria-labelledby': `switch-list-label-${item.id}` }} sx={{ transform: 'scale(0.75)', '& .MuiSwitch-switchBase.Mui-checked': { color: 'green', '&:hover': { backgroundColor: 'rgba(0, 128, 0, 0.08)' }, }, '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { backgroundColor: 'green', }, }} /> } sx={{ border: '1px solid #e0e0e0', borderRadius: 2, mb: 1, py: 0.5 }} >
@@ -477,10 +527,11 @@ function App() {
               </ListItem>
             ))}
           </List>
-        </Box>
-      )}
-    </Box>
-  );
+         </Box>
+       )}
+       {/* --- Test Button REMOVED --- */}
+     </Box>
+   );
 
   const renderChatScreen = () => (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -516,7 +567,26 @@ function App() {
                    {msg.text}
                  </Typography>
                </Paper>
-            ) : (
+            ) : msg.codeToCopy ? ( // Check if it's a fallback message with code
+               <Box>
+                 <Typography variant="body2" sx={{ fontSize: '0.9rem', whiteSpace: 'pre-wrap', wordBreak: 'break-word', mb: 1 }}>
+                   {msg.text}
+                 </Typography>
+                 <Paper variant="outlined" sx={{ p: 1, bgcolor: 'grey.100', position: 'relative', borderRadius: 1, overflowX: 'auto' }}>
+                   <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all', fontSize: '0.8rem' }}>
+                     <code>{msg.codeToCopy}</code>
+                   </pre>
+                   <IconButton
+                     size="small"
+                     onClick={() => navigator.clipboard.writeText(msg.codeToCopy)}
+                     sx={{ position: 'absolute', top: 4, right: 4 }}
+                     title="Copy code"
+                   >
+                     <ContentCopyIcon sx={{ fontSize: '0.9rem' }} /> {/* Use Material UI Copy Icon */}
+                   </IconButton>
+                 </Paper>
+               </Box>
+            ) : ( // Regular Magix text response
                <Typography variant="body2" sx={{ fontSize: '0.9rem', whiteSpace: 'pre-wrap', wordBreak: 'break-word', alignSelf: 'flex-start' }}>
                   {msg.text}
                </Typography>
