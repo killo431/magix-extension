@@ -544,7 +544,17 @@ function App() {
           <Typography variant="body2" sx={{ mb: 1, fontWeight: 500, color: 'text.secondary' }}>
             Your Modifications: {/* Changed text */}
           </Typography>
-          <List dense sx={{ pt: 0, maxHeight: '250px', overflowY: 'auto' }}> {/* Added maxHeight and overflowY */}
+          <List dense sx={{
+            pt: 0,
+            maxHeight: '350px', // Increased height
+            overflowY: 'auto',
+            // Hide scrollbar styles
+            '&::-webkit-scrollbar': {
+              display: 'none'
+            },
+            scrollbarWidth: 'none', // Firefox
+            '-ms-overflow-style': 'none' // IE and Edge
+          }}>
             {userScripts.length > 0 ? (
               userScripts.map((script) => (
                 <ListItem
