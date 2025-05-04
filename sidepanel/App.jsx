@@ -73,6 +73,7 @@ function App() {
   const [accountMenuAnchorEl, setAccountMenuAnchorEl] = useState(null);
   const [settingsTab, setSettingsTab] = useState(0);
   const [userName, setUserName] = useState(''); // State for name field
+  const [userScripts, setUserScripts] = useState([]); // State for user's scripts
 
   // State for placeholder animation
   const [placeholderIndex, setPlaceholderIndex] = useState(0);
@@ -104,6 +105,37 @@ function App() {
       authListener?.subscription.unsubscribe();
     };
   }, []);
+
+  // --- Fetch User Scripts Effect ---
+  useEffect(() => {
+    const fetchUserScripts = async () => {
+      if (session?.user?.id) {
+        console.log("Fetching scripts for user:", session.user.id);
+        try {
+          const { data, error } = await supabase
+            .from('scripts')
+            .select('id, title, domain_pattern, is_active') // Select necessary fields
+            .eq('user_id', session.user.id)
+            .order('created_at', { ascending: false }); // Optional: order by creation date
+
+          if (error) {
+            throw error;
+          }
+          console.log("Fetched scripts:", data);
+          setUserScripts(data || []);
+        } catch (fetchError) {
+          console.error("Error fetching user scripts:", fetchError);
+          setError(`Failed to load your scripts: ${fetchError.message}`);
+          setUserScripts([]); // Clear scripts on error
+        }
+      } else {
+        // Clear scripts if user logs out
+        setUserScripts([]);
+      }
+    };
+
+    fetchUserScripts();
+  }, [session]); // Re-run when session changes
 
   // --- Scroll to bottom effect ---
   useEffect(() => {
@@ -446,13 +478,6 @@ function App() {
     }
   };
 
-  // --- Dummy Recent Data ---
-  const recentItems = [
-    { id: 1, text: 'Hide the promotions tab in gmail', active: true },
-    { id: 2, text: 'Hide the promotions tab in gmail', active: false },
-    { id: 3, text: 'Hide the promotions tab in gmail', active: true },
-  ];
-
   // --- Render Functions ---
 
   const renderHomeInputArea = () => (
@@ -515,21 +540,49 @@ function App() {
       </Typography>
       {renderHomeInputArea()}
       {session && (
-        <Box sx={{ flexGrow: 1, overflowY: 'auto', mt: 2 }}>
+        <Box sx={{ mt: 2 }}> {/* Removed flexGrow and overflowY */}
           <Typography variant="body2" sx={{ mb: 1, fontWeight: 500, color: 'text.secondary' }}>
-            Recent:
+            Your Modifications: {/* Changed text */}
           </Typography>
-          {/* --- Test Button REMOVED --- */}
-          <List dense sx={{ pt: 0 }}>
-            {recentItems.map((item) => (
-              <ListItem key={item.id} secondaryAction={ <Switch edge="end" checked={item.active} inputProps={{ 'aria-labelledby': `switch-list-label-${item.id}` }} sx={{ transform: 'scale(0.75)', '& .MuiSwitch-switchBase.Mui-checked': { color: 'green', '&:hover': { backgroundColor: 'rgba(0, 128, 0, 0.08)' }, }, '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { backgroundColor: 'green', }, }} /> } sx={{ border: '1px solid #e0e0e0', borderRadius: 2, mb: 1, py: 0.5 }} >
-                <ListItemText id={`switch-list-label-${item.id}`} primary={item.text} primaryTypographyProps={{ sx: { fontSize: '0.9rem' } }} />
-              </ListItem>
-            ))}
+          <List dense sx={{ pt: 0, maxHeight: '250px', overflowY: 'auto' }}> {/* Added maxHeight and overflowY */}
+            {userScripts.length > 0 ? (
+              userScripts.map((script) => (
+                <ListItem
+                  key={script.id}
+                  secondaryAction={
+                    <Switch
+                      edge="end"
+                      checked={script.is_active}
+                      disabled={true} // Disable toggle functionality for now
+                      inputProps={{ 'aria-labelledby': `switch-list-label-${script.id}` }}
+                      sx={{
+                        transform: 'scale(0.75)',
+                        '& .MuiSwitch-switchBase.Mui-checked': { color: 'green', '&:hover': { backgroundColor: 'rgba(0, 128, 0, 0.08)' }, },
+                        '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { backgroundColor: 'green', },
+                        // Style disabled state if needed
+                        '& .Mui-disabled': { cursor: 'not-allowed' }
+                      }}
+                    />
+                  }
+                  sx={{ border: '1px solid #e0e0e0', borderRadius: 2, mb: 1, py: 0.5 }}
+                >
+                  <ListItemText
+                    id={`switch-list-label-${script.id}`}
+                    primary={script.title}
+                    secondary={script.domain_pattern || 'All sites'} // Show domain or fallback
+                    primaryTypographyProps={{ sx: { fontSize: '0.9rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }}
+                    secondaryTypographyProps={{ sx: { fontSize: '0.8rem' } }}
+                  />
+                </ListItem>
+              ))
+            ) : (
+              <Typography variant="caption" color="text.secondary" sx={{ textAlign: 'center', display: 'block', mt: 2 }}>
+                No modifications saved yet. Create one using the input above! {/* Changed text */}
+              </Typography>
+            )}
           </List>
          </Box>
        )}
-       {/* --- Test Button REMOVED --- */}
      </Box>
    );
 
