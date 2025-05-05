@@ -286,10 +286,18 @@ function App() {
   // --- Submit Handler (Updated for Edge Function) ---
   const handleSubmit = async () => { // Made async
     if (isLoading) return;
-    const messageText = inputValue.trim();
-    if (!messageText) return;
+    const originalMessageText = inputValue.trim(); // Store original text for UI
+    if (!originalMessageText) return;
 
-    console.log("handleSubmit triggered with text:", messageText);
+    // Construct the prompt for the backend, potentially including the selector
+    let promptForBackend = originalMessageText;
+    if (selectedElementPath) {
+      promptForBackend = `${originalMessageText} (Selected Element: ${selectedElementPath})`;
+      console.log("Appending selected element path to backend prompt:", selectedElementPath);
+      setSelectedElementPath(''); // Clear the path immediately after using it for the prompt
+    }
+
+    console.log("handleSubmit triggered. Original text:", originalMessageText, "Backend prompt:", promptForBackend);
 
     if (!session) {
       console.log("User not authenticated, triggering sign-in...");
@@ -299,18 +307,18 @@ function App() {
       setIsLoading(true); // Start loading for API call
       setError(null); // Clear previous errors
 
-      // Add user message immediately
-      const newUserMessage = { id: Date.now(), sender: 'user', text: messageText };
+      // Add user message immediately (using original text)
+      const newUserMessage = { id: Date.now(), sender: 'user', text: originalMessageText };
       setMessages(prev => [...prev, newUserMessage]);
       setCurrentView('chat');
       setInputValue(''); // Clear input
 
       try {
         // --- Step 1: Call analyze-prompt ---
-        console.log("Calling analyze-prompt...");
+        console.log("Calling analyze-prompt with:", promptForBackend);
         const { data: analysisData, error: analysisError } = await supabase.functions.invoke(
           'analyze-prompt',
-          { body: { prompt: messageText } }
+          { body: { prompt: promptForBackend } } // Send potentially modified prompt
         );
 
         if (analysisError) {
@@ -337,9 +345,10 @@ function App() {
           setMessages(prev => [...prev, magixIndicator]);
 
           try {
+            console.log("Calling generate-script with:", promptForBackend);
             const { data: scriptData, error: scriptError } = await supabase.functions.invoke(
               'generate-script',
-              { body: { prompt: messageText } } // Send original prompt again
+              { body: { prompt: promptForBackend } } // Send potentially modified prompt again
             );
 
             if (scriptError) {
@@ -386,8 +395,8 @@ function App() {
                     css: generatedCode
                   });
                   console.log("CSS injected directly.");
-                  // Save CSS script immediately
-                  saveScriptToSupabase(session.user.id, generatedCode, messageText, currentTab.url);
+                  // Save CSS script immediately (use original text for title)
+                  saveScriptToSupabase(session.user.id, generatedCode, originalMessageText, currentTab.url);
 
                 } else { // injectionType === 'JS'
                   // Clean the generated code: remove markdown backticks and language identifier
@@ -414,8 +423,8 @@ function App() {
                         setMessages(prev => [...prev, errorMsg]);
                       } else if (response && response.success) {
                         console.log("Background script confirmed successful registration:", response.scriptId);
-                        // Save JS script only after successful registration confirmation - use cleanedCode here too? Or original? Let's save the original for now.
-                        saveScriptToSupabase(session.user.id, generatedCode, messageText, currentTab.url); // Still save original code with markdown
+                        // Save JS script only after successful registration confirmation (use original text for title)
+                        saveScriptToSupabase(session.user.id, generatedCode, originalMessageText, currentTab.url); // Still save original code with markdown
                         // Optionally add a success message to chat
                         // const successMsg = { id: Date.now() + 6, sender: 'magix', text: "Script changes applied successfully!" };
                         // setMessages(prev => [...prev, successMsg]);
