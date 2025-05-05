@@ -146,10 +146,11 @@ function App() {
       console.log("Sidepanel received message:", message);
       if (message.type === 'ELEMENT_SELECTED') { // Changed type check
         console.log('Element selection complete. Selector:', message.selector);
-        setSelectedElementPath(message.selector || ''); // Store the selector
+        const receivedSelector = message.selector || '';
+        setSelectedElementPath(receivedSelector); // Store the selector
         setIsSelectingElement(false); // Exit selection mode UI state
         // Optionally, update the input field with the selector or provide other feedback
-        // setInputValue(prev => `${prev} ${message.selector}`); // Example: Append selector to input
+        // setInputValue(prev => `${prev} ${receivedSelector}`); // Example: Append selector to input
         sendResponse({ status: "Selector received by sidepanel" }); // Acknowledge receipt
         return true; // Indicate async response IS sent for this specific message type
       }
@@ -515,55 +516,68 @@ function App() {
     <Box sx={{
       display: 'flex', flexDirection: 'column', p: 1, borderRadius: 3,
       bgcolor: 'grey.100', border: '1px solid #e0e0e0', position: 'relative',
-      mb: 2, minHeight: 'calc(1.5em * 4 + 16px)', // Ensure enough height for buttons
+      mb: 2, // Removed minHeight, will adjust padding below
+      pb: selectedElementPath ? '48px' : '40px', // Add extra padding at bottom if selector is shown
+      // Removed duplicate position: 'relative'
     }}>
-      {/* Select Element Chip */}
+      {/* Select Element Chip - Updated Logic */}
       <Chip
-        icon={<MyLocationIcon sx={{ fontSize: '1rem', color: isSelectingElement ? 'primary.main' : 'grey.500' }} />}
-        label={isSelectingElement ? "Selecting..." : "Select"}
+        icon={<MyLocationIcon sx={{ fontSize: '1rem', color: (isSelectingElement || selectedElementPath) ? 'primary.main' : 'grey.500' }} />}
+        label={isSelectingElement ? "Selecting..." : selectedElementPath ? "Selected" : "Select"}
         size="small"
-        variant={isSelectingElement ? "filled" : "outlined"} // Change variant when selecting
-        color={isSelectingElement ? "primary" : "default"} // Change color when selecting
+        variant={(isSelectingElement || selectedElementPath) ? "filled" : "outlined"} // Filled when selecting or selected
+        color={(isSelectingElement || selectedElementPath) ? "primary" : "default"} // Primary when selecting or selected
         clickable
-        onClick={async () => { // Make async to query tab
+        onClick={async () => {
           if (isSelectingElement) {
-            // TODO: Implement cancellation logic if needed
-            console.log("Selection already in progress");
+            // Currently selecting, do nothing (or implement cancel later)
+            console.log("Selection in progress...");
             return;
           }
-          setIsSelectingElement(true);
-          setSelectedElementPath(''); // Clear previous selection
-          console.log("Starting element selection...");
-          try {
-            const [currentTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-            if (currentTab?.id) {
-              chrome.tabs.sendMessage(currentTab.id, { type: 'START_ELEMENT_SELECTION' }, (response) => {
-                if (chrome.runtime.lastError) {
-                  console.error("Error sending START_ELEMENT_SELECTION:", chrome.runtime.lastError.message);
-                  setError(`Could not initiate selection mode: ${chrome.runtime.lastError.message}`);
-                  setIsSelectingElement(false); // Reset state on error
-                } else {
-                  console.log("START_ELEMENT_SELECTION message sent, response:", response);
-                }
-              });
-            } else {
-              throw new Error("Could not find active tab.");
+          if (selectedElementPath) {
+            // Currently selected, clear the selection
+            console.log("Clearing selected element path.");
+            setSelectedElementPath('');
+            // Optionally send a message to content script to stop highlighting if needed
+          } else {
+            // Not selecting and nothing selected, start selection
+            setIsSelectingElement(true);
+            setSelectedElementPath(''); // Ensure it's clear before starting
+            console.log("Starting element selection...");
+            setError(null); // Clear previous errors
+            try {
+              const [currentTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+              if (currentTab?.id) {
+                chrome.tabs.sendMessage(currentTab.id, { type: 'START_ELEMENT_SELECTION' }, (response) => {
+                  const lastError = chrome.runtime.lastError;
+                  if (lastError) {
+                    console.error("Error sending START_ELEMENT_SELECTION:", lastError.message);
+                    setError(`Could not initiate selection mode: ${lastError.message}`);
+                    setIsSelectingElement(false); // Reset state on error
+                  } else {
+                    console.log("START_ELEMENT_SELECTION message sent, response:", response);
+                    // Don't reset isSelectingElement here, wait for ELEMENT_SELECTED message
+                  }
+                });
+              } else {
+                throw new Error("Could not find active tab.");
+              }
+            } catch (error) {
+              console.error("Error starting element selection:", error);
+              setError(`Error initiating selection: ${error.message}`);
+              setIsSelectingElement(false); // Reset state on error
             }
-          } catch (error) {
-            console.error("Error starting element selection:", error);
-            setError(`Error initiating selection: ${error.message}`);
-            setIsSelectingElement(false); // Reset state on error
           }
         }}
         sx={{
           position: 'absolute',
           bottom: 8,
           left: 8,
-          fontSize: '0.75rem', // Smaller font
-          height: '28px', // Match IconButton height
-          borderColor: '#e0e0e0', // Match text box border
-          '& .MuiChip-label': { px: '8px' }, // Adjust padding
-          '& .MuiChip-icon': { ml: '6px', mr: '-4px' } // Adjust icon margin
+          fontSize: '0.75rem',
+          height: '28px',
+          borderColor: '#e0e0e0',
+          '& .MuiChip-label': { px: '8px' },
+          '& .MuiChip-icon': { ml: '6px', mr: '-4px' }
         }}
       />
       <TextField
@@ -571,9 +585,10 @@ function App() {
         placeholder={animatedPlaceholder + '|'}
         value={inputValue} onChange={handleInputChange} onKeyDown={handleKeyDown}
         InputProps={{ disableUnderline: true, sx: { fontSize: '0.9rem' } }}
-        sx={{ flexGrow: 1, '& .MuiInputBase-root': { py: 0.5 }, mb: 4 }}
+        sx={{ flexGrow: 1, '& .MuiInputBase-root': { py: 0.5 } }} // Removed mb: 4
         disabled={isLoading} // Disable input while loading
       />
+      {/* Removed the Typography component that displayed the selected path */}
       <IconButton
         onClick={handleSubmit} disabled={isLoading || !inputValue.trim()}
         sx={{
