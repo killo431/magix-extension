@@ -11,6 +11,7 @@ import Switch from '@mui/material/Switch';
 import AccountCircleIcon from '@mui/icons-material/AccountCircle'; // Profile icon
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward'; // Submit icon
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'; // Back icon
+import MyLocationIcon from '@mui/icons-material/MyLocation'; // Crosshair/Select icon
 import Paper from '@mui/material/Paper';
 import CircularProgress from '@mui/material/CircularProgress';
 import Popover from '@mui/material/Popover';
@@ -74,6 +75,8 @@ function App() {
   const [settingsTab, setSettingsTab] = useState(0);
   const [userName, setUserName] = useState(''); // State for name field
   const [userScripts, setUserScripts] = useState([]); // State for user's scripts
+  const [isSelectingElement, setIsSelectingElement] = useState(false); // State for element selection mode
+  const [selectedElementPath, setSelectedElementPath] = useState(''); // State for the selected element's path/selector
 
   // State for placeholder animation
   const [placeholderIndex, setPlaceholderIndex] = useState(0);
@@ -136,6 +139,34 @@ function App() {
 
     fetchUserScripts();
   }, [session]); // Re-run when session changes
+
+  // --- Element Selection Listener ---
+  useEffect(() => {
+    const messageListener = (message, sender, sendResponse) => {
+      console.log("Sidepanel received message:", message);
+      if (message.type === 'ELEMENT_SELECTED') { // Changed type check
+        console.log('Element selection complete. Selector:', message.selector);
+        setSelectedElementPath(message.selector || ''); // Store the selector
+        setIsSelectingElement(false); // Exit selection mode UI state
+        // Optionally, update the input field with the selector or provide other feedback
+        // setInputValue(prev => `${prev} ${message.selector}`); // Example: Append selector to input
+        sendResponse({ status: "Selector received by sidepanel" }); // Acknowledge receipt
+        return true; // Indicate async response IS sent for this specific message type
+      }
+      // Handle other message types if needed in the future
+
+      // If the message type wasn't 'ELEMENT_SELECTED', we don't need to keep the message channel open.
+      // Returning false or undefined signals this.
+      return false;
+    };
+
+    chrome.runtime.onMessage.addListener(messageListener);
+
+    // Cleanup listener on component unmount
+    return () => {
+      chrome.runtime.onMessage.removeListener(messageListener);
+    };
+  }, []); // Empty dependency array means this runs once on mount
 
   // --- Scroll to bottom effect ---
   useEffect(() => {
@@ -484,8 +515,57 @@ function App() {
     <Box sx={{
       display: 'flex', flexDirection: 'column', p: 1, borderRadius: 3,
       bgcolor: 'grey.100', border: '1px solid #e0e0e0', position: 'relative',
-      mb: 2, minHeight: 'calc(1.5em * 4 + 16px)',
+      mb: 2, minHeight: 'calc(1.5em * 4 + 16px)', // Ensure enough height for buttons
     }}>
+      {/* Select Element Chip */}
+      <Chip
+        icon={<MyLocationIcon sx={{ fontSize: '1rem', color: isSelectingElement ? 'primary.main' : 'grey.500' }} />}
+        label={isSelectingElement ? "Selecting..." : "Select"}
+        size="small"
+        variant={isSelectingElement ? "filled" : "outlined"} // Change variant when selecting
+        color={isSelectingElement ? "primary" : "default"} // Change color when selecting
+        clickable
+        onClick={async () => { // Make async to query tab
+          if (isSelectingElement) {
+            // TODO: Implement cancellation logic if needed
+            console.log("Selection already in progress");
+            return;
+          }
+          setIsSelectingElement(true);
+          setSelectedElementPath(''); // Clear previous selection
+          console.log("Starting element selection...");
+          try {
+            const [currentTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+            if (currentTab?.id) {
+              chrome.tabs.sendMessage(currentTab.id, { type: 'START_ELEMENT_SELECTION' }, (response) => {
+                if (chrome.runtime.lastError) {
+                  console.error("Error sending START_ELEMENT_SELECTION:", chrome.runtime.lastError.message);
+                  setError(`Could not initiate selection mode: ${chrome.runtime.lastError.message}`);
+                  setIsSelectingElement(false); // Reset state on error
+                } else {
+                  console.log("START_ELEMENT_SELECTION message sent, response:", response);
+                }
+              });
+            } else {
+              throw new Error("Could not find active tab.");
+            }
+          } catch (error) {
+            console.error("Error starting element selection:", error);
+            setError(`Error initiating selection: ${error.message}`);
+            setIsSelectingElement(false); // Reset state on error
+          }
+        }}
+        sx={{
+          position: 'absolute',
+          bottom: 8,
+          left: 8,
+          fontSize: '0.75rem', // Smaller font
+          height: '28px', // Match IconButton height
+          borderColor: '#e0e0e0', // Match text box border
+          '& .MuiChip-label': { px: '8px' }, // Adjust padding
+          '& .MuiChip-icon': { ml: '6px', mr: '-4px' } // Adjust icon margin
+        }}
+      />
       <TextField
         fullWidth multiline minRows={2} maxRows={3} variant="standard"
         placeholder={animatedPlaceholder + '|'}

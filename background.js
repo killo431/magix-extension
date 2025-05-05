@@ -122,10 +122,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   // Removed injectCSS and injectJS handlers as injection is now done from sidepanel
 
-  // Default case if no action matches
-  console.log("Message action/type not recognized or handled:", message.action || message.type);
-  sendResponse({ status: "Unknown action or type."});
-  return false; // Synchronous response for unknown actions
+  // Let other listeners (like sidepanel) handle messages not explicitly targeted here
+  return false; // Indicate synchronous processing or no response needed from background
 
 }); // End of onMessage listener
 
