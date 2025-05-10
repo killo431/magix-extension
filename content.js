@@ -46,11 +46,30 @@ function generateCssSelector(element) {
         // Fallback to classes if no unique ID or stable attribute found
         const classes = Array.from(element.classList).filter(cls => !/^[0-9]/.test(cls)); // Filter out potentially dynamic classes starting with numbers
         if (classes.length > 0) {
+            // Function to escape CSS special characters for .matches()
+            const escapeCSS = (str) => str.replace(/([!"#$%&'()*+,.\/:;<=>?@\[\\\]^`{|}~])/g, "\\$1");
+
+            // Create the selector with original class names for the final output
             const classSelector = '.' + classes.join('.');
-            // Check if this class selector is unique among siblings
+
+            // Create an escaped version for the .matches() check
+            const escapedClasses = classes.map(escapeCSS);
+            const escapedClassSelector = '.' + escapedClasses.join('.');
+
+            // Check if this *escaped* class selector is unique among siblings
             const siblings = Array.from(element.parentNode?.children || []);
-            const matchingSiblings = siblings.filter(sib => sib.matches(`${element.nodeName.toLowerCase()}${classSelector}`));
+            let matchingSiblings = [];
+            try {
+                 // Use the escaped selector for the .matches() query
+                 matchingSiblings = siblings.filter(sib => sib.matches(`${element.nodeName.toLowerCase()}${escapedClassSelector}`));
+            } catch (e) {
+                 console.warn(`CSS selector matching failed for "${escapedClassSelector}":`, e);
+                 // If matching fails even with escaping (highly unlikely but possible), fallback to nth-of-type
+                 matchingSiblings = []; // Treat as not unique
+            }
+
              if (matchingSiblings.length === 1) {
+                 // If unique, use the *original* (unescaped) class selector for the final path
                  selector += classSelector;
              } else {
                  // If classes aren't unique, fall back to nth-of-type
@@ -123,6 +142,14 @@ function handleMouseOver(event) {
   }
 }
 
+// Function to handle mousedown events during selection mode (to prevent focus, etc.)
+function handleMouseDown(event) {
+  if (!selectingModeActive) return;
+  // Prevent default actions (like focusing an input) and stop propagation immediately
+  event.preventDefault();
+  event.stopPropagation();
+}
+
 // Function to handle click events during selection mode
 function handleClick(event) {
   if (!selectingModeActive) return;
@@ -160,6 +187,7 @@ function startSelectionMode() {
   selectingModeActive = true;
   console.log("Starting element selection mode...");
   document.addEventListener('mouseover', handleMouseOver, true); // Use capture phase
+  document.addEventListener('mousedown', handleMouseDown, true); // Add mousedown listener in capture phase
   document.addEventListener('click', handleClick, true); // Use capture phase
   // Optionally change cursor style
   document.body.style.cursor = 'crosshair';
@@ -176,6 +204,7 @@ function exitSelectionMode() {
     currentHoverElement = null;
   }
   document.removeEventListener('mouseover', handleMouseOver, true);
+  document.removeEventListener('mousedown', handleMouseDown, true); // Remove mousedown listener
   document.removeEventListener('click', handleClick, true);
   // Restore cursor style
   document.body.style.cursor = 'default';
