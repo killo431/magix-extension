@@ -379,6 +379,14 @@ function App() {
               await chrome.scripting.insertCSS({ target: { tabId: tab.id }, css: newCode });
               console.log(`CSS injected for script ${savedScriptId}`);
               // CSS doesn't need separate registration via background script currently
+              if (savedScriptId) { // Ensure DB save was successful before adding success message
+                setMessages(prev => [...prev, { 
+                  id: `ai-code-success-${Date.now()}`, 
+                  sender: 'magix', 
+                  text: 'Alright, I\'ve applied the changes! Please refresh the page and take a look and let me know what you think or if there\'s anything else.', 
+                  chat_id: activeChatId 
+                }]);
+              }
             } else {
               // Register JS using the database ID
               const cleanCode = newCode.replace(/^```javascript\n/, '').replace(/\n```$/, '');
@@ -395,7 +403,12 @@ function App() {
                   setMessages(p => [...p, {id: `err-${Date.now()}`, sender:'magix', text: `Script registration error: ${eMsg}`, chat_id: activeChatId}]);
                 } else if (res?.success) {
                   console.log(`Script ${savedScriptId} registered successfully via background.`);
-                  // Optionally add a success message to chat?
+                  setMessages(prev => [...prev, { 
+                    id: `ai-code-success-${Date.now()}`, 
+                    sender: 'magix', 
+                    text: 'Alright, I\'ve applied the changes! Please refresh the page and take a look and let me know what you think or if there\'s anything else.', 
+                    chat_id: activeChatId 
+                  }]);
                 }
               });
             }
@@ -618,7 +631,7 @@ function App() {
   );
 
   const renderHomeScreen = () => (
-    <Box sx={{ p: 2, display: 'flex', flexDirection: 'column' }}>
+    <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', flexGrow: 1, overflowY: 'auto' }}>
       <Typography variant="h6" component="h1" sx={{ textAlign: 'center', mb: 2, fontSize: '1.05rem', fontWeight: 600 }}>Modify any website 🪄</Typography>
       {renderHomeInputArea()}
       {session && (
@@ -647,6 +660,9 @@ function App() {
           </List>
          </Box>
        )}
+      <Typography variant="caption" color="text.secondary" sx={{ textAlign: 'center', mt: 3 }}>
+        Magix is in its early stages and may occasionally make mistakes.
+      </Typography>
      </Box>
    );
 
@@ -763,7 +779,7 @@ function App() {
         </DialogTitle>
         <DialogContent>
           <DialogContentText id="alert-dialog-description">
-            Are you sure you want to permanently delete this script? This action will remove it from your list and the database, and cannot be undone. Associated chat history will remain but will no longer be linked to this script.
+            Are you sure you want to permanently delete this modification? This action cannot be undone.
           </DialogContentText>
         </DialogContent>
         <DialogActions>
