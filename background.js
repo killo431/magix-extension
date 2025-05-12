@@ -21,9 +21,14 @@ chrome.runtime.onInstalled.addListener(async () => { // Make listener async
   }
 });
 
-// Function to handle USER SCRIPT registration (Simplified for testing)
+// Function to handle USER SCRIPT registration using the database scriptId
 async function handleUserScriptRegistration(message, sender, sendResponse) {
-  // Check for targetUrl and code in the message payload
+  // Check for scriptId, targetUrl, and code in the message payload
+  if (!message.scriptId) {
+    console.error("REGISTER_USER_SCRIPT: Missing scriptId (database UUID) in message payload.");
+    sendResponse({ success: false, error: "Missing scriptId in message payload." });
+    return;
+  }
   if (!message.targetUrl) {
     console.error("REGISTER_USER_SCRIPT: Missing targetUrl in message payload.");
     sendResponse({ success: false, error: "Missing targetUrl in message payload." });
@@ -35,9 +40,9 @@ async function handleUserScriptRegistration(message, sender, sendResponse) {
     return;
   }
 
-  const targetUrl = message.targetUrl; // Use URL from message
+  const scriptId = message.scriptId; // Use the database UUID as the script ID
+  const targetUrl = message.targetUrl;
   const newCode = message.code;
-  const scriptIdPrefix = "magix-script-"; // Reverted prefix
 
   // Helper function to create a broad match pattern from a URL
   function getBroadMatchPattern(url) {
@@ -57,38 +62,47 @@ async function handleUserScriptRegistration(message, sender, sendResponse) {
   const broadMatchPattern = getBroadMatchPattern(targetUrl);
   console.log(`Using broad match pattern: ${broadMatchPattern}`);
 
-  try {
-    // 1. Get all currently registered user scripts
-    const existingScripts = await chrome.userScripts.getScripts();
-    const scriptsToUnregister = existingScripts.filter(script => script.id.startsWith(scriptIdPrefix));
+  // Check if the userScripts API is available
+  if (!chrome.userScripts || !chrome.userScripts.register || !chrome.userScripts.unregister) {
+    console.error("UserScripts API (register/unregister) is not available.");
+    sendResponse({ success: false, error: "UserScripts API not available." });
+    return;
+  }
 
-    // 2. Unregister any existing scripts with the same prefix
-    if (scriptsToUnregister.length > 0) {
-      const idsToUnregister = scriptsToUnregister.map(script => script.id);
-      console.log(`Unregistering existing Magix scripts: ${idsToUnregister.join(', ')}`);
-      await chrome.userScripts.unregister({ ids: idsToUnregister });
-      console.log("Existing Magix scripts unregistered.");
-    } else {
-      console.log("No existing Magix scripts found to unregister.");
+  try {
+    // 1. Attempt to unregister any existing script with the *same database ID* first.
+    // This handles updates/overwrites correctly.
+    try {
+      console.log(`Attempting to unregister existing script with ID: ${scriptId} before registering.`);
+      await chrome.userScripts.unregister({ ids: [scriptId] });
+      console.log(`Successfully unregistered script ${scriptId} (if it existed).`);
+    } catch (unregisterError) {
+      // Ignore "Nonexistent script ID" errors, as this just means the script wasn't registered before.
+      // Log other potential errors during unregistration.
+      if (unregisterError.message && unregisterError.message.includes("Nonexistent script ID")) {
+        console.log(`Script ${scriptId} not found during pre-registration unregister check (this is expected for new scripts). Proceeding to register.`);
+      } else {
+        // Log and rethrow unexpected errors during unregistration attempt
+        console.error(`Unexpected error during pre-registration unregister attempt for ${scriptId}:`, unregisterError);
+        throw new Error(`Failed to unregister existing script ${scriptId}: ${unregisterError.message}`);
+      }
     }
 
-    // 3. Register the new USER SCRIPT using the broad pattern
-    const newScriptId = `${scriptIdPrefix}${Date.now()}`; // Use original prefix
-    console.log(`Registering new Magix user script for pattern ${broadMatchPattern} with ID: ${newScriptId}`);
-    await chrome.userScripts.register([{ // Use userScripts API
-      id: newScriptId,
-      matches: [broadMatchPattern], // Use the broad match pattern
+    // 2. Register the new script using the database ID
+    console.log(`Registering user script for pattern ${broadMatchPattern} with database ID: ${scriptId}`);
+    await chrome.userScripts.register([{
+      id: scriptId, // Use the database UUID
+      matches: [broadMatchPattern],
       js: [{ code: newCode }],
-      runAt: "document_idle" // Changed from document_start
-      // world: "USER_SCRIPT" // Implicit default
+      runAt: "document_idle"
     }]);
 
-    console.log(`User script ${newScriptId} registered successfully for pattern ${broadMatchPattern}.`);
-    sendResponse({ success: true, scriptId: newScriptId });
+    console.log(`User script ${scriptId} registered successfully for pattern ${broadMatchPattern}.`);
+    sendResponse({ success: true }); // No need to send back ID, sidepanel already has it
 
   } catch (error) {
-    console.error(`Error handling user script registration for pattern ${broadMatchPattern}:`, error);
-    sendResponse({ success: false, error: error.message || "Unknown error" });
+    console.error(`Error handling user script registration for ID ${scriptId}, pattern ${broadMatchPattern}:`, error);
+    sendResponse({ success: false, error: error.message || "Unknown registration error" });
   }
 }
 
@@ -119,6 +133,54 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // Return true to indicate that sendResponse will be called asynchronously
     return true;
   }
+
+  // Handle removing script effect (JS or CSS)
+  if (message.type === 'REMOVE_SCRIPT_EFFECT') {
+    const { scriptId, scriptCode } = message;
+    console.log(`Received request to remove effect for script ID: ${scriptId}`);
+
+    // Basic check to determine type (improve as needed)
+    const isJs = scriptCode && ['function', 'const', 'let', 'var', 'document', 'window', '=>'].some(k => scriptCode.includes(k));
+
+    if (isJs) {
+      // Attempt to unregister the user script
+      // IMPORTANT CAVEAT: The current registration logic (handleUserScriptRegistration)
+      // Since registration now uses the database scriptId, we can directly attempt unregistration.
+      (async () => { // Wrap in async IIFE to use await
+        try {
+          // Check if userScripts API is available before attempting to use it
+          if (chrome.userScripts && chrome.userScripts.unregister) {
+             console.log(`Attempting to unregister JS script with ID: ${scriptId}`);
+             await chrome.userScripts.unregister({ ids: [scriptId] });
+             console.log(`Unregistration successful for script ID: ${scriptId} (if it was registered).`);
+             sendResponse({ success: true, status: "JS unregistration successful." });
+          } else {
+             console.error("chrome.userScripts.unregister API not available.");
+             sendResponse({ success: false, error: "UserScripts API for unregistration not available." });
+          }
+        } catch (error) {
+          // Catch errors, e.g., if the ID format is invalid or API fails
+          console.error(`Error trying to unregister script ${scriptId}:`, error);
+          // Check if the error indicates the script ID was not found (which is okay)
+          if (error.message && (error.message.includes("Invalid script ID") || error.message.includes("No script with ID"))) {
+             console.warn(`Script ID ${scriptId} was not found for unregistration (it might have already been removed or never registered).`);
+             // Still send success=true because the desired state (script not registered) is achieved.
+             sendResponse({ success: true, status: "Script ID not found for unregistration." });
+          } else {
+             // Send failure for other unexpected errors
+             sendResponse({ success: false, error: error.message });
+          }
+        }
+      })();
+    } else { // Assume CSS
+      console.log(`CSS removal for script ${scriptId} needs implementation.`);
+      // TODO: Implement sending message to content script to remove the specific <style> tag
+      // This requires CSS to be injected with identifiable IDs.
+      sendResponse({ success: true, status: "CSS removal pending implementation" });
+    }
+    return true; // Indicates asynchronous response
+  }
+
 
   // Removed injectCSS and injectJS handlers as injection is now done from sidepanel
 

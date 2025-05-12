@@ -5,13 +5,14 @@ import Typography from '@mui/material/Typography';
 import TextField from '@mui/material/TextField';
 import IconButton from '@mui/material/IconButton';
 import List from '@mui/material/List';
-import ListItem from '@mui/material/ListItem';
+// import ListItem from '@mui/material/ListItem'; // Replaced by ListItemButton for script list
 import ListItemText from '@mui/material/ListItemText';
 import Switch from '@mui/material/Switch';
 import AccountCircleIcon from '@mui/icons-material/AccountCircle'; // Profile icon
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward'; // Submit icon
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'; // Back icon
 import MyLocationIcon from '@mui/icons-material/MyLocation'; // Crosshair/Select icon
+import DeleteIcon from '@mui/icons-material/Delete'; // Import Delete icon
 import Paper from '@mui/material/Paper';
 import CircularProgress from '@mui/material/CircularProgress';
 import Popover from '@mui/material/Popover';
@@ -24,6 +25,13 @@ import Link from '@mui/material/Link';
 import Chip from '@mui/material/Chip'; // For Pro User pill
 import LinearProgress from '@mui/material/LinearProgress'; // For usage bar
 import ContentCopyIcon from '@mui/icons-material/ContentCopy'; // Import Copy icon
+import { ListItem } from '@mui/material'; // Keep for Popover
+import Dialog from '@mui/material/Dialog';
+import DialogActions from '@mui/material/DialogActions';
+import DialogContent from '@mui/material/DialogContent';
+import DialogContentText from '@mui/material/DialogContentText';
+import DialogTitle from '@mui/material/DialogTitle';
+
 
 // TabPanel component for settings screen
 function TabPanel(props) {
@@ -37,7 +45,6 @@ function TabPanel(props) {
       {...other}
     >
       {value === index && (
-        // Removed default padding, will add specifically to content
         <Box>
           {children}
         </Box>
@@ -65,26 +72,34 @@ const placeholderSuggestions = [
 function App() {
   const [session, setSession] = useState(null);
   const [error, setError] = useState(null);
-  const [isLoading, setIsLoading] = useState(false); // Combined loading state
+  const [isLoading, setIsLoading] = useState(false);
   const [inputValue, setInputValue] = useState('');
-  const [currentView, setCurrentView] = useState('home'); // 'home', 'chat', 'settings'
+  const [currentView, setCurrentView] = useState('home');
   const [messages, setMessages] = useState([]);
   const chatContainerRef = useRef(null);
   const chatEndRef = useRef(null);
   const [accountMenuAnchorEl, setAccountMenuAnchorEl] = useState(null);
   const [settingsTab, setSettingsTab] = useState(0);
-  const [userName, setUserName] = useState(''); // State for name field
-  const [userScripts, setUserScripts] = useState([]); // State for user's scripts
-  const [isSelectingElement, setIsSelectingElement] = useState(false); // State for element selection mode
-  const [selectedElementPath, setSelectedElementPath] = useState(''); // State for the selected element's path/selector
+  const [userName, setUserName] = useState('');
+  const [userScripts, setUserScripts] = useState([]);
+  const [isSelectingElement, setIsSelectingElement] = useState(false);
+  const [selectedElementPath, setSelectedElementPath] = useState('');
 
-  // State for placeholder animation
+  const [currentChatId, setCurrentChatId] = useState(null);
+  const [currentScriptContentForChat, setCurrentScriptContentForChat] = useState('');
+  const [currentChatTitle, setCurrentChatTitle] = useState('');
+
   const [placeholderIndex, setPlaceholderIndex] = useState(0);
   const [subIndex, setSubIndex] = useState(0);
   const [reverse, setReverse] = useState(false);
   const [animatedPlaceholder, setAnimatedPlaceholder] = useState('');
 
-  // --- Authentication Handling ---
+  // State for delete confirmation dialog
+  const [isConfirmDeleteDialogOpen, setIsConfirmDeleteDialogOpen] = useState(false);
+  const [scriptPendingDeletion, setScriptPendingDeletion] = useState(null);
+  const triggerRef = useRef(null); // Ref to store the element that triggered the dialog
+
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
@@ -94,13 +109,14 @@ function App() {
       (_event, session) => {
         setSession(session);
         console.log("Auth state changed:", _event, session);
-        setIsLoading(false); // Stop loading on auth change
+        setIsLoading(false);
         setError(null);
         if (!session) {
           setCurrentView('home');
           setMessages([]);
-        } else {
-           // TODO: Fetch user profile/name if available
+          setCurrentChatId(null);
+          setCurrentScriptContentForChat('');
+          setCurrentChatTitle('');
         }
       }
     );
@@ -109,137 +125,141 @@ function App() {
     };
   }, []);
 
-  // --- Fetch User Scripts Effect ---
-  useEffect(() => {
-    const fetchUserScripts = async () => {
-      if (session?.user?.id) {
-        console.log("Fetching scripts for user:", session.user.id);
-        try {
-          const { data, error } = await supabase
-            .from('scripts')
-            .select('id, title, domain_pattern, is_active') // Select necessary fields
-            .eq('user_id', session.user.id)
-            .order('created_at', { ascending: false }); // Optional: order by creation date
+  const fetchUserScripts = async () => {
+    if (session?.user?.id) {
+      console.log("Fetching scripts for user:", session.user.id);
+      try {
+        const { data, error } = await supabase
+          .from('scripts')
+          .select('id, title, domain_pattern, is_active, code') // Ensure 'code' is selected
+          .eq('user_id', session.user.id)
+          .order('created_at', { ascending: false });
 
-          if (error) {
-            throw error;
-          }
-          console.log("Fetched scripts:", data);
-          setUserScripts(data || []);
-        } catch (fetchError) {
-          console.error("Error fetching user scripts:", fetchError);
-          setError(`Failed to load your scripts: ${fetchError.message}`);
-          setUserScripts([]); // Clear scripts on error
-        }
-      } else {
-        // Clear scripts if user logs out
+        if (error) throw error;
+        console.log("Fetched scripts:", data);
+        setUserScripts(data || []);
+      } catch (fetchError) {
+        console.error("Error fetching user scripts:", fetchError);
+        setError(`Failed to load your scripts: ${fetchError.message}`);
         setUserScripts([]);
       }
-    };
+    } else {
+      setUserScripts([]);
+    }
+  };
 
+  useEffect(() => {
     fetchUserScripts();
-  }, [session]); // Re-run when session changes
+  }, [session]);
 
-  // --- Element Selection Listener ---
+  // Effect to load chat data when currentChatId changes
+  useEffect(() => {
+    const loadChatData = async () => {
+      if (currentChatId && session?.user?.id) {
+        console.log(`Loading data for chat ID: ${currentChatId}`);
+        setIsLoading(true);
+        setError(null);
+        try {
+          const { data: chatData, error: chatError } = await supabase
+            .from('chats')
+            .select('title, script_id, scripts ( id, code, title )') // Join with scripts
+            .eq('id', currentChatId)
+            .eq('user_id', session.user.id)
+            .single();
+
+          if (chatError) throw chatError;
+
+          if (chatData) {
+            setCurrentChatTitle(chatData.title || chatData.scripts?.title || 'Chat');
+            setCurrentScriptContentForChat(chatData.scripts?.code || '');
+            
+            const { data: messagesData, error: messagesError } = await supabase
+              .from('chat_messages')
+              .select('*')
+              .eq('chat_id', currentChatId)
+              .order('created_at', { ascending: true });
+
+            if (messagesError) throw messagesError;
+            
+            setMessages(messagesData.map(msg => ({ // Ensure consistent message structure
+                id: msg.id, // Use DB id for messages from DB
+                sender: msg.sender_type,
+                text: msg.content,
+                status: msg.status, // if you add status to DB
+                chat_id: msg.chat_id
+            })) || []);
+            setCurrentView('chat');
+          } else {
+            setError("Could not load the selected chat or chat not found.");
+            setCurrentChatId(null); // Reset if chat is invalid
+            setCurrentView('home');
+          }
+        } catch (e) {
+          console.error("Error loading chat data:", e);
+          setError(`Failed to load chat: ${e.message}`);
+        } finally {
+          setIsLoading(false);
+        }
+      } else if (!currentChatId && currentView === 'chat') {
+        // If currentChatId becomes null (e.g., user clicks back from chat), go home
+        setCurrentView('home');
+        setMessages([]);
+        setCurrentScriptContentForChat('');
+        setCurrentChatTitle('');
+      }
+    };
+    loadChatData();
+  }, [currentChatId, session?.user?.id]);
+
+
   useEffect(() => {
     const messageListener = (message, sender, sendResponse) => {
-      console.log("Sidepanel received message:", message);
-      if (message.type === 'ELEMENT_SELECTED') { // Changed type check
-        console.log('Element selection complete. Selector:', message.selector);
-        const receivedSelector = message.selector || '';
-        setSelectedElementPath(receivedSelector); // Store the selector
-        setIsSelectingElement(false); // Exit selection mode UI state
-        // Optionally, update the input field with the selector or provide other feedback
-        // setInputValue(prev => `${prev} ${receivedSelector}`); // Example: Append selector to input
-        sendResponse({ status: "Selector received by sidepanel" }); // Acknowledge receipt
-        return true; // Indicate async response IS sent for this specific message type
+      if (message.type === 'ELEMENT_SELECTED') {
+        setSelectedElementPath(message.selector || '');
+        setIsSelectingElement(false);
+        sendResponse({ status: "Selector received by sidepanel" });
+        return true;
       }
-      // Handle other message types if needed in the future
-
-      // If the message type wasn't 'ELEMENT_SELECTED', we don't need to keep the message channel open.
-      // Returning false or undefined signals this.
       return false;
     };
-
     chrome.runtime.onMessage.addListener(messageListener);
+    return () => chrome.runtime.onMessage.removeListener(messageListener);
+  }, []);
 
-    // Cleanup listener on component unmount
-    return () => {
-      chrome.runtime.onMessage.removeListener(messageListener);
-    };
-  }, []); // Empty dependency array means this runs once on mount
-
-  // --- Scroll to bottom effect ---
   useEffect(() => {
-    if (currentView === 'chat') {
-      chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    }
+    if (currentView === 'chat') chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, currentView]);
 
-  // --- Placeholder Animation Effect (Revised Timer Logic) ---
   useEffect(() => {
-    if (currentView !== 'home') {
-      setAnimatedPlaceholder('');
-      return;
+    if (currentView !== 'home' || currentChatId) {
+      setAnimatedPlaceholder(''); return;
     }
     let timeoutId;
     if (subIndex < placeholderSuggestions[placeholderIndex].length && !reverse) {
-      timeoutId = setTimeout(() => {
-        setAnimatedPlaceholder(prev => prev + placeholderSuggestions[placeholderIndex][subIndex]);
-        setSubIndex(prev => prev + 1);
-      }, 100);
+      timeoutId = setTimeout(() => { setAnimatedPlaceholder(p => p + placeholderSuggestions[placeholderIndex][subIndex]); setSubIndex(i => i + 1); }, 100);
     } else if (subIndex === placeholderSuggestions[placeholderIndex].length && !reverse) {
-       timeoutId = setTimeout(() => { setReverse(true); }, 1500);
+      timeoutId = setTimeout(() => setReverse(true), 1500);
     } else if (subIndex > 0 && reverse) {
-      timeoutId = setTimeout(() => {
-        setAnimatedPlaceholder(prev => prev.slice(0, -1));
-        setSubIndex(prev => prev - 1);
-      }, 50);
+      timeoutId = setTimeout(() => { setAnimatedPlaceholder(p => p.slice(0, -1)); setSubIndex(i => i - 1); }, 50);
     } else if (subIndex === 0 && reverse) {
-      setReverse(false);
-      setPlaceholderIndex(prev => (prev + 1) % placeholderSuggestions.length);
+      setReverse(false); setPlaceholderIndex(i => (i + 1) % placeholderSuggestions.length);
     }
     return () => clearTimeout(timeoutId);
-  }, [subIndex, placeholderIndex, reverse, currentView]);
+  }, [subIndex, placeholderIndex, reverse, currentView, currentChatId]);
 
-
-  // --- Account Menu Handlers ---
-   const handleAccountMenuOpen = (event) => {
-    setAccountMenuAnchorEl(event.currentTarget);
-  };
-  const handleAccountMenuClose = () => {
-    setAccountMenuAnchorEl(null);
-  };
+  const handleAccountMenuOpen = (event) => setAccountMenuAnchorEl(event.currentTarget);
+  const handleAccountMenuClose = () => setAccountMenuAnchorEl(null);
   const openAccountMenu = Boolean(accountMenuAnchorEl);
   const accountMenuId = openAccountMenu ? 'account-popover' : undefined;
-
-  // --- Settings Tab Handler ---
-  const handleSettingsTabChange = (event, newValue) => {
-    setSettingsTab(newValue);
-  };
-
-  // --- Name Update Handler (Placeholder) ---
-  const handleNameUpdate = () => {
-    console.log("Update name clicked:", userName);
-    // TODO: Implement actual name update logic with Supabase
-  };
-
-  // --- Delete Account Handler (Placeholder) ---
-   const handleDeleteAccount = () => {
-    console.log("Delete account clicked");
-    // TODO: Implement confirmation and deletion logic
-  };
-
+  const handleSettingsTabChange = (event, newValue) => setSettingsTab(newValue);
+  const handleNameUpdate = () => console.log("Update name clicked:", userName);
+  const handleDeleteAccount = () => console.log("Delete account clicked");
 
   const handleSignIn = async () => {
-    setError(null);
-    setIsLoading(true); // Start loading for auth
-    console.log("Attempting Google sign-in via launchWebAuthFlow...");
+    setError(null); setIsLoading(true);
     try {
       const manifest = chrome.runtime.getManifest();
-      if (!manifest.oauth2?.client_id || !manifest.oauth2?.scopes) {
-        throw new Error("OAuth2 configuration missing in manifest.json");
-      }
+      if (!manifest.oauth2?.client_id || !manifest.oauth2?.scopes) throw new Error("OAuth2 config missing.");
       const authUrl = new URL('https://accounts.google.com/o/oauth2/auth');
       const redirectUri = `https://${chrome.runtime.id}.chromiumapp.org`;
       authUrl.searchParams.set('client_id', manifest.oauth2.client_id);
@@ -247,268 +267,331 @@ function App() {
       authUrl.searchParams.set('access_type', 'offline');
       authUrl.searchParams.set('redirect_uri', redirectUri);
       authUrl.searchParams.set('scope', manifest.oauth2.scopes.join(' '));
-      chrome.identity.launchWebAuthFlow(
-        { url: authUrl.href, interactive: true },
-        async (redirectedTo) => {
-          if (chrome.runtime.lastError || !redirectedTo) {
-            setError(`Sign-in failed: ${chrome.runtime.lastError?.message || 'User cancelled or flow failed.'}`);
-            setIsLoading(false); return;
-          }
-          try {
-            const redirectedUrl = new URL(redirectedTo);
-            const params = new URLSearchParams(redirectedUrl.hash.substring(1));
-            const idToken = params.get('id_token');
-            if (!idToken) {
-              setError("Sign-in failed: ID token not found in response.");
-              setIsLoading(false); return;
-            }
-            const { error: supabaseError } = await supabase.auth.signInWithIdToken({
-              provider: 'google', token: idToken,
-            });
-            if (supabaseError) throw supabaseError;
-            // Auth state change listener will handle setting session and isLoading=false
-          } catch (parseError) {
-            setError(`Sign-in failed: ${parseError.message}`);
-            setIsLoading(false);
-          }
+      chrome.identity.launchWebAuthFlow({ url: authUrl.href, interactive: true }, async (redirectedTo) => {
+        if (chrome.runtime.lastError || !redirectedTo) {
+          setError(`Sign-in failed: ${chrome.runtime.lastError?.message || 'Flow failed.'}`);
+          setIsLoading(false); return;
         }
-      );
-    } catch (error) {
-      setError(`Sign-in failed: ${error.message}`);
-      setIsLoading(false);
-       }
-   }; // <-- Added missing closing brace here
-  // --- Input Handling ---
-  const handleInputChange = (event) => {
-    setInputValue(event.target.value);
+        try {
+          const params = new URLSearchParams(new URL(redirectedTo).hash.substring(1));
+          const idToken = params.get('id_token');
+          if (!idToken) { setError("Sign-in failed: ID token not found."); setIsLoading(false); return; }
+          const { error: supabaseError } = await supabase.auth.signInWithIdToken({ provider: 'google', token: idToken });
+          if (supabaseError) throw supabaseError;
+        } catch (e) { setError(`Sign-in failed: ${e.message}`); setIsLoading(false); }
+      });
+    } catch (e) { setError(`Sign-in failed: ${e.message}`); setIsLoading(false); }
   };
 
-  // --- Submit Handler (Updated for Edge Function) ---
-  const handleSubmit = async () => { // Made async
+  const handleInputChange = (event) => setInputValue(event.target.value);
+
+  const handleSubmit = async () => {
     if (isLoading) return;
-    const originalMessageText = inputValue.trim(); // Store original text for UI
-    if (!originalMessageText) return;
+    const originalMessageText = inputValue.trim();
+    if (!originalMessageText && !currentChatId) return;
 
-    // Construct the prompt for the backend, potentially including the selector
-    let promptForBackend = originalMessageText;
-    if (selectedElementPath) {
-      promptForBackend = `${originalMessageText} (Selected Element: ${selectedElementPath})`;
-      console.log("Appending selected element path to backend prompt:", selectedElementPath);
-      setSelectedElementPath(''); // Clear the path immediately after using it for the prompt
-    }
+    setIsLoading(true);
+    setError(null);
+    setInputValue('');
 
-    console.log("handleSubmit triggered. Original text:", originalMessageText, "Backend prompt:", promptForBackend);
+    let activeChatId = currentChatId;
+    let scriptContentForThisInteraction = currentScriptContentForChat;
+    let isNewChat = false;
+    const userId = session?.user?.id;
 
-    if (!session) {
-      console.log("User not authenticated, triggering sign-in...");
-      handleSignIn(); // Auth loading is handled by handleSignIn
-    } else {
-      console.log("User authenticated, calling Edge Function...");
-      setIsLoading(true); // Start loading for API call
-      setError(null); // Clear previous errors
+    try {
+      if (!userId) {
+        handleSignIn(); return;
+      }
 
-      // Add user message immediately (using original text)
-      const newUserMessage = { id: Date.now(), sender: 'user', text: originalMessageText };
-      setMessages(prev => [...prev, newUserMessage]);
-      setCurrentView('chat');
-      setInputValue(''); // Clear input
+      if (!activeChatId) {
+        isNewChat = true;
+        const chatTitle = originalMessageText.substring(0, 75) + (originalMessageText.length > 75 ? '...' : '');
+        const { data: newChatData, error: newChatError } = await supabase.from('chats').insert({ user_id: userId, title: chatTitle }).select().single();
+        if (newChatError) throw new Error(`Failed to create chat: ${newChatError.message}`);
+        if (!newChatData) throw new Error("Failed to get new chat data.");
+        activeChatId = newChatData.id;
+        setCurrentChatId(activeChatId);
+        setCurrentChatTitle(chatTitle);
+        setCurrentScriptContentForChat('');
+        scriptContentForThisInteraction = '';
+        setMessages([]);
+      }
 
-      try {
-        // --- Step 1: Call analyze-prompt ---
-        console.log("Calling analyze-prompt with:", promptForBackend);
-        const { data: analysisData, error: analysisError } = await supabase.functions.invoke(
-          'analyze-prompt',
-          { body: { prompt: promptForBackend } } // Send potentially modified prompt
-        );
+      const { error: userMsgErr } = await supabase.from('chat_messages').insert({ chat_id: activeChatId, user_id: userId, sender_type: 'user', content: originalMessageText });
+      if (userMsgErr) throw new Error(`Failed to save user message: ${userMsgErr.message}`);
+      setMessages(prev => [...prev, { id: `user-${Date.now()}`, sender: 'user', text: originalMessageText, chat_id: activeChatId }]);
+      if(currentView !== 'chat') setCurrentView('chat');
 
-        if (analysisError) {
-          throw new Error(`Analysis failed: ${analysisError.message}`);
-        }
+      let promptForBackend = originalMessageText;
+      const currentSelectedElemPath = selectedElementPath;
+      if (currentSelectedElemPath) {
+        promptForBackend = `${originalMessageText} (Selected Element: ${currentSelectedElemPath})`;
+        setSelectedElementPath('');
+      }
 
-        if (!analysisData || typeof analysisData.response !== 'string' || typeof analysisData.is_code_needed !== 'boolean') {
-          console.error("Invalid response structure from analyze-prompt:", analysisData);
-          throw new Error("Received an unexpected analysis response from the AI.");
-        }
+      const { data: analysis, error: analysisErr } = await supabase.functions.invoke('analyze-prompt', { body: { prompt: promptForBackend, selected_element_selector: currentSelectedElemPath, existing_script_content: scriptContentForThisInteraction } });
+      if (analysisErr) throw new Error(`Analysis failed: ${analysisErr.message}`);
+      if (!analysis || typeof analysis.response !== 'string' || typeof analysis.is_code_needed !== 'boolean') throw new Error("Unexpected analysis response.");
 
-        console.log("Analysis response:", analysisData);
+      const { error: aiMsgErr } = await supabase.from('chat_messages').insert({ chat_id: activeChatId, user_id: userId, sender_type: 'ai', content: analysis.response });
+      if (aiMsgErr) console.error("Failed to save AI message:", aiMsgErr.message);
+      setMessages(prev => [...prev, { id: `ai-${Date.now()}`, sender: 'magix', text: analysis.response, chat_id: activeChatId }]);
 
-        // Add the textual response from Magix immediately
-        const magixTextResponse = { id: Date.now() + 1, sender: 'magix', text: analysisData.response };
-        setMessages(prev => [...prev, magixTextResponse]);
+      if (analysis.is_code_needed) {
+        const procId = `proc-${Date.now()}`;
+        setMessages(prev => [...prev, { id: procId, sender: 'magix', status: 'processing', chat_id: activeChatId }]);
+        try {
+          const { data: script, error: scriptErr } = await supabase.functions.invoke('generate-script', { body: { prompt: promptForBackend, selected_element_selector: currentSelectedElemPath, existing_script_content: scriptContentForThisInteraction } });
+          if (scriptErr) throw new Error(`Code generation failed: ${scriptErr.message}`);
+          if (script?.generatedCode) {
+            const newCode = script.generatedCode;
+            setCurrentScriptContentForChat(newCode);
+            const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+            if (!tab?.id) throw new Error("No active tab.");
+            const type = ['function', 'const', 'let', 'var', 'document', 'window', '=>'].some(k => newCode.includes(k)) ? 'JS' : 'CSS';
 
-        // --- Step 2: Conditionally call generate-script ---
-        if (analysisData.is_code_needed) {
-          console.log("Code is needed, showing indicator and calling generate-script...");
-          // Add processing indicator before the second call
-          const processingMsgId = Date.now() + 2; // Unique ID for the indicator
-          const magixIndicator = { id: processingMsgId, sender: 'magix', status: 'processing' };
-          setMessages(prev => [...prev, magixIndicator]);
-
-          try {
-            console.log("Calling generate-script with:", promptForBackend);
-            const { data: scriptData, error: scriptError } = await supabase.functions.invoke(
-              'generate-script',
-              { body: { prompt: promptForBackend } } // Send potentially modified prompt again
+            // --- Refactored Logic ---
+            // 1. Save/Update script in DB first to get the stable scriptId (UUID)
+            // Note: saveScriptToSupabase needs modification to return the ID
+            const savedScriptId = await saveScriptToSupabase(
+              userId,
+              newCode,
+              originalMessageText,
+              tab.url,
+              activeChatId,
+              !isNewChat && !!scriptContentForThisInteraction // isUpdating flag
             );
 
-            if (scriptError) {
-              throw new Error(`Code generation failed: ${scriptError.message}`);
+            if (!savedScriptId) {
+              // Error should be handled within saveScriptToSupabase, but we stop processing here.
+              // setError might already be set by saveScriptToSupabase.
+              console.error("Stopping handleSubmit: Failed to get script ID from save/update operation.");
+              // Ensure loading state is reset even if we throw an error implicitly below
+              // by not continuing. We might need a more robust error message here.
+              // For now, rely on error set by saveScriptToSupabase.
+              return; // Exit the try block for this message processing
             }
 
-            if (scriptData && scriptData.generatedCode) {
-              console.log("Generated code response:", scriptData.generatedCode);
-              const generatedCode = scriptData.generatedCode; // Use the code from the second function
-
-              // --- Inject and Save Logic (Moved inside the conditional block) ---
-              // Note: The try/catch for injection/saving is nested within the try for generate-script
-              try {
-                // Get active tab ID first
-                const [currentTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-
-                if (!currentTab?.id) {
-                  throw new Error("Could not find active tab to inject into.");
-                }
-                const targetTabId = currentTab.id;
-
-                // Refined check for JS vs CSS
-                let injectionType = 'CSS'; // Default to CSS
-                const strongJsKeywords = [
-                  'function', 'const', 'let', 'var', 'document', 'window',
-                  '=>', 'addEventListener', 'MutationObserver', 'async', 'await',
-                  'class ', 'import ', 'export ', '.log', '.error', 'fetch', 'try', 'catch'
-                 ]; // Using stronger, less ambiguous JS indicators
-
-                // If the code contains strong JS indicators, classify as JS
-                if (strongJsKeywords.some(keyword => generatedCode.includes(keyword))) {
-                   injectionType = 'JS';
-                }
-                // If no strong JS indicators found, assume CSS.
-                // This relies on the AI providing either JS or CSS as requested.
-
-                console.log(`Detected type: ${injectionType}.`);
-
-                // Inject directly from side panel
-                if (injectionType === 'CSS') {
-                  console.log("Injecting CSS directly...");
-                  await chrome.scripting.insertCSS({
-                    target: { tabId: targetTabId },
-                    css: generatedCode
-                  });
-                  console.log("CSS injected directly.");
-                  // Save CSS script immediately (use original text for title)
-                  saveScriptToSupabase(session.user.id, generatedCode, originalMessageText, currentTab.url);
-
-                } else { // injectionType === 'JS'
-                  // Clean the generated code: remove markdown backticks and language identifier
-                  const cleanedCode = generatedCode.replace(/^```javascript\n/, '').replace(/\n```$/, '');
-                  console.log("Cleaned JS code:", cleanedCode); // Log the cleaned code
-
-                  // Send code to the background script for registration via userScripts API
-                  console.log("Sending REGISTER_USER_SCRIPT message to background script...");
-                  chrome.runtime.sendMessage(
-                    // Add the targetUrl and send the cleaned code
-                    { type: 'REGISTER_USER_SCRIPT', code: cleanedCode, targetUrl: currentTab.url },
-                    (response) => {
-                      const lastError = chrome.runtime.lastError;
-                      if (lastError) {
-                        console.error("Error registering script via background:", lastError.message);
-                        setError(`Failed to register script: ${lastError.message}`);
-                        // Optionally add a message to the chat indicating failure
-                        const errorMsg = { id: Date.now() + 5, sender: 'magix', text: `Error: Could not apply the script changes (${lastError.message}).` };
-                        setMessages(prev => [...prev, errorMsg]);
-                      } else if (response && !response.success) {
-                        console.error("Background script reported error during registration:", response.error);
-                        setError(`Failed to register script: ${response.error}`);
-                        const errorMsg = { id: Date.now() + 5, sender: 'magix', text: `Error: Could not apply the script changes (${response.error}).` };
-                        setMessages(prev => [...prev, errorMsg]);
-                      } else if (response && response.success) {
-                        console.log("Background script confirmed successful registration:", response.scriptId);
-                        // Save JS script only after successful registration confirmation (use original text for title)
-                        saveScriptToSupabase(session.user.id, generatedCode, originalMessageText, currentTab.url); // Still save original code with markdown
-                        // Optionally add a success message to chat
-                        // const successMsg = { id: Date.now() + 6, sender: 'magix', text: "Script changes applied successfully!" };
-                        // setMessages(prev => [...prev, successMsg]);
-                      } else {
-                        // Handle unexpected response from background script
-                        console.warn("Unexpected response from background script during registration:", response);
-                        setError("Received an unexpected response while registering the script.");
-                      }
-                    }
-                  );
-                }
-
-              } catch (injectSaveError) {
-                 console.error("Error during CSS injection or sending message to background:", injectSaveError);
-                 // Set error state
-                 setError(`Error processing script: ${injectSaveError.message}`);
-              }
-              // --- End Inject and Save Logic ---
-
+            // 2. Inject/Register based on type, using the savedScriptId for JS registration
+            if (type === 'CSS') {
+              // Inject CSS directly
+              await chrome.scripting.insertCSS({ target: { tabId: tab.id }, css: newCode });
+              console.log(`CSS injected for script ${savedScriptId}`);
+              // CSS doesn't need separate registration via background script currently
             } else {
-              // Handle cases where generate-script succeeded but didn't return expected data
-              console.error("generate-script returned unexpected data:", scriptData);
-              throw new Error("Received unexpected code format from the AI.");
+              // Register JS using the database ID
+              const cleanCode = newCode.replace(/^```javascript\n/, '').replace(/\n```$/, '');
+              chrome.runtime.sendMessage({
+                type: 'REGISTER_USER_SCRIPT',
+                scriptId: savedScriptId, // Pass the database ID
+                code: cleanCode,
+                targetUrl: tab.url
+              }, (res) => { // No need for async here anymore
+                if (chrome.runtime.lastError || (res && !res.success)) {
+                  const eMsg = chrome.runtime.lastError?.message || res?.error || "Unknown script registration error.";
+                  console.error(`Script registration failed for ${savedScriptId}: ${eMsg}`);
+                  setError(`Script registration failed: ${eMsg}`);
+                  setMessages(p => [...p, {id: `err-${Date.now()}`, sender:'magix', text: `Script registration error: ${eMsg}`, chat_id: activeChatId}]);
+                } else if (res?.success) {
+                  console.log(`Script ${savedScriptId} registered successfully via background.`);
+                  // Optionally add a success message to chat?
+                }
+              });
             }
-          } catch (scriptGenError) {
-             // Catch errors specifically from the generate-script call or subsequent logic
-             console.error("Error during script generation/injection:", scriptGenError);
-             setError(`Error: ${scriptGenError.message}`); // Set the error state
-             // Add error message to chat
-             const errorResponse = { id: Date.now() + 3, sender: 'magix', text: `Sorry, an error occurred during code generation: ${scriptGenError.message}` };
-             setMessages(prev => [...prev, errorResponse]);
-          } finally {
-             // Remove processing indicator regardless of success/failure of the second step
-             setMessages(prev => prev.filter(msg => msg.id !== processingMsgId));
-          }
-        } else {
-          console.log("Code not needed based on analysis.");
-          // No further action needed if code is not required
-        }
+            // --- End Refactored Logic ---
 
-      } catch (err) { // This outer catch handles errors from analyze-prompt or unexpected structure issues
-        console.error("Error during Magix processing (outer):", err);
-        setError(`Error: ${err.message}`); // Set the error state
-        // Add error message to chat
-        const errorResponse = { id: Date.now() + 4, sender: 'magix', text: `Sorry, an error occurred: ${err.message}` };
-        setMessages(prev => [...prev, errorResponse]);
-      } finally {
-        setIsLoading(false); // Stop loading regardless of outcome (covers both steps)
+          } else throw new Error("Unexpected code format.");
+        } catch (e) {
+          setError(`Script error: ${e.message}`);
+          setMessages(p => [...p, {id: `err-${Date.now()}`, sender:'magix', text: `Script error: ${e.message}`, chat_id: activeChatId}]);
+        } finally {
+          setMessages(p => p.filter(m => m.id !== procId));
+        }
       }
+    } catch (e) {
+      setError(`Error: ${e.message}`);
+      setMessages(p => [...p, {id: `err-${Date.now()}`, sender:'magix', text: `Error: ${e.message}`, chat_id: activeChatId || 'unknown'}]);
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  // Helper function to save script details
-  const saveScriptToSupabase = async (userId, code, promptText, tabUrl) => {
-      console.log("Attempting to save script to Supabase...");
-      let domain = '*'; // Default fallback
-      try {
-        if (tabUrl && !tabUrl.startsWith('chrome://')) {
-           const urlObj = new URL(tabUrl);
-           domain = urlObj.hostname;
-        } else {
-           console.log("Cannot extract domain from chrome:// URL or invalid URL:", tabUrl);
-        }
-      } catch (urlError) {
-         console.error("Error parsing tab URL for domain:", urlError);
-      }
-      console.log(`Using domain: ${domain}`);
+  const saveScriptToSupabase = async (userId, code, promptText, tabUrl, chatId, isUpdatingExistingScriptInChat = false) => {
+    let domain = '*';
+    try { if (tabUrl && !tabUrl.startsWith('chrome://')) domain = new URL(tabUrl).hostname; } catch (e) { console.error("URL parse error:", e); }
+    console.log(`saveScriptToSupabase: ChatID: ${chatId}, Update: ${isUpdatingExistingScriptInChat}`);
+    let scriptIdToReturn = null; // Variable to hold the ID to return
 
-      const { error: insertError } = await supabase
-        .from('scripts')
-        .insert({
-          user_id: userId,
-          code: code,
-          title: promptText.substring(0, 50) + (promptText.length > 50 ? '...' : ''), // Basic title from prompt
-          domain_pattern: domain, // Use extracted domain
-          // is_active defaults to true in DB schema
-        });
+    try {
+      if (isUpdatingExistingScriptInChat && chatId) {
+        // --- Update Existing Script ---
+        const { data: chat, error: chatErr } = await supabase.from('chats').select('script_id').eq('id', chatId).single();
+        if (chatErr) throw new Error(`Failed to fetch chat details for update: ${chatErr.message}`);
+        if (!chat?.script_id) throw new Error("Chat is not linked to a script, cannot update.");
 
-      if (insertError) {
-        console.error("Error saving script to Supabase:", insertError);
-        setError(`Failed to save script: ${insertError.message}`); // Set error state
+        const scriptId = chat.script_id; // Get the existing script ID
+        const { error: updateErr } = await supabase
+          .from('scripts')
+          .update({ code, title: promptText.substring(0, 50) + (promptText.length > 50 ? '...' : '') })
+          .eq('id', scriptId)
+          .eq('user_id', userId); // Ensure user owns the script
+
+        if (updateErr) throw new Error(`Failed to update script: ${updateErr.message}`);
+
+        console.log(`Script ${scriptId} updated successfully.`);
+        setCurrentScriptContentForChat(code); // Update local state
+        fetchUserScripts(); // Refresh script list
+        scriptIdToReturn = scriptId; // Set ID to return
+
       } else {
-        console.log("Script saved to Supabase successfully.");
+        // --- Insert New Script ---
+        const { data: newScript, error: insertErr } = await supabase
+          .from('scripts')
+          .insert({ user_id: userId, code, title: promptText.substring(0, 50) + (promptText.length > 50 ? '...' : ''), domain_pattern: domain })
+          .select('id') // Only select the ID
+          .single();
+
+        if (insertErr) throw new Error(`Failed to save new script: ${insertErr.message}`);
+        if (!newScript?.id) throw new Error("Failed to retrieve ID after inserting new script.");
+
+        scriptIdToReturn = newScript.id; // Set ID to return
+        console.log(`New script ${scriptIdToReturn} saved successfully.`);
+        setCurrentScriptContentForChat(code); // Update local state
+
+        // Link to chat if a chatId was provided (should be the case if called from handleSubmit)
+        if (chatId) {
+          const { error: linkErr } = await supabase
+            .from('chats')
+            .update({ script_id: scriptIdToReturn })
+            .eq('id', chatId);
+
+          if (linkErr) {
+            // Log error but don't necessarily stop everything, script is saved.
+            console.error(`Failed to link script ${scriptIdToReturn} to chat ${chatId}: ${linkErr.message}`);
+            setError(`Failed to link script to chat: ${linkErr.message}`); // Show error to user
+          } else {
+            console.log(`Script ${scriptIdToReturn} linked to chat ${chatId}.`);
+          }
+        }
+        fetchUserScripts(); // Refresh script list
       }
+    } catch (e) {
+      console.error("Error in saveScriptToSupabase:", e);
+      setError(e.message || "An unknown error occurred while saving the script.");
+      scriptIdToReturn = null; // Ensure null is returned on error
+    }
+
+    return scriptIdToReturn; // Return the ID (or null if error occurred)
+  };
+
+  const handleScriptItemClick = async (script) => {
+    if (!session?.user?.id) { handleSignIn(); return; }
+    setIsLoading(true); setError(null);
+    console.log("Script item clicked:", script.id, script.title);
+
+    try {
+      const { data: existingChats, error: fetchChatError } = await supabase
+        .from('chats')
+        .select('id, title, script_id, scripts (id, code, title)') // scripts (code) is important
+        .eq('script_id', script.id)
+        .eq('user_id', session.user.id)
+        .limit(1);
+
+      if (fetchChatError) throw fetchChatError;
+
+      if (existingChats && existingChats.length > 0) {
+        const chat = existingChats[0];
+        console.log("Found existing chat for script:", chat.id);
+        setCurrentChatId(chat.id); // This will trigger the useEffect to load messages & set view
+        // useEffect will also set title and script content
+      } else {
+        console.log("No existing chat for script, creating new one for script ID:", script.id);
+        const newChatTitle = script.title || 'Chat about script';
+        const { data: newChatData, error: newChatError } = await supabase
+          .from('chats')
+          .insert({ user_id: session.user.id, script_id: script.id, title: newChatTitle })
+          .select('id, title') // Select id and title of the new chat
+          .single();
+
+        if (newChatError) throw newChatError;
+        if (!newChatData) throw new Error("Failed to create and retrieve new chat for script.");
+        
+        setCurrentChatId(newChatData.id);
+        setCurrentChatTitle(newChatData.title); // Set title from new chat data
+        setCurrentScriptContentForChat(script.code || ''); // script.code should be available
+        setMessages([]); // New chat starts with no messages from DB
+        setCurrentView('chat'); // Explicitly set view after setting ID
+      }
+    } catch (e) {
+      console.error("Error in handleScriptItemClick:", e);
+      setError(`Failed to process script click: ${e.message}`);
+    } 
+    // setIsLoading(false); // isLoading will be handled by the useEffect for currentChatId
+  };
+
+  const handleCloseConfirmDialog = () => {
+    setIsConfirmDeleteDialogOpen(false);
+    setScriptPendingDeletion(null);
+    // Return focus after a short delay to ensure dialog is closed
+    setTimeout(() => {
+      triggerRef.current?.focus();
+    }, 0);
+  };
+
+  const handleConfirmDeleteScript = async () => { // Renamed and made async
+    if (!scriptPendingDeletion) {
+      handleCloseConfirmDialog();
+      return;
+    }
+
+    const scriptToDelete = scriptPendingDeletion; // Keep a reference before clearing state
+
+    // 1. Request removal of local effect
+    console.log(`Requesting removal of local effect for script: ${scriptToDelete.id}`);
+    chrome.runtime.sendMessage({
+      type: 'REMOVE_SCRIPT_EFFECT',
+      scriptId: scriptToDelete.id,
+      scriptCode: scriptToDelete.code
+    }, async (response) => { // Made callback async to await DB deletion
+       if (chrome.runtime.lastError) {
+         console.error("Error sending remove effect message:", chrome.runtime.lastError.message);
+         setError(`Error removing script effect: ${chrome.runtime.lastError.message}`);
+         // Don't proceed to DB delete if local removal fails to notify
+       } else if (response && !response.success) {
+         console.error("Failed to remove script effect (response):", response.error);
+         setError(`Failed to remove script effect: ${response.error}`);
+         // Don't proceed to DB delete if local removal fails
+       } else {
+         console.log("Script effect removal message processed successfully by background script.");
+
+         // 2. Delete from database
+         if (scriptToDelete?.id && session?.user?.id) {
+           console.log(`Attempting to delete script ${scriptToDelete.id} from database.`);
+           try {
+             const { error: deleteError } = await supabase
+               .from('scripts')
+               .delete()
+               .eq('id', scriptToDelete.id)
+               .eq('user_id', session.user.id); // Ensure user owns the script
+
+             if (deleteError) {
+               throw deleteError;
+             }
+
+             console.log(`Script ${scriptToDelete.id} deleted from database.`);
+             fetchUserScripts(); // Refresh the list from DB
+             // Optionally, show a success notification/toast here
+           } catch (dbError) {
+             console.error("Error deleting script from database:", dbError);
+             setError(`Failed to delete script from database: ${dbError.message}`);
+             // UI will still close, error will be displayed.
+           }
+         }
+       }
+    });
+    // Dialog closing and focus management is now handled after both operations attempt
+    handleCloseConfirmDialog();
   };
 
 
@@ -519,181 +602,48 @@ function App() {
     }
   };
 
-  // --- Render Functions ---
-
   const renderHomeInputArea = () => (
-    <Box sx={{
-      display: 'flex', flexDirection: 'column', p: 1, borderRadius: 3,
-      bgcolor: 'grey.100', border: '1px solid #e0e0e0', position: 'relative',
-      mb: 2, // Removed minHeight, will adjust padding below
-      pb: selectedElementPath ? '48px' : '40px', // Add extra padding at bottom if selector is shown
-      // Removed duplicate position: 'relative'
-    }}>
-      {/* Select Element Chip - Updated Logic */}
-      <Chip
-        icon={<MyLocationIcon sx={{ fontSize: '1rem', color: (isSelectingElement || selectedElementPath) ? 'primary.main' : 'grey.500' }} />}
-        label={isSelectingElement ? "Selecting..." : selectedElementPath ? "Selected" : "Select"}
-        size="small"
-        variant={(isSelectingElement || selectedElementPath) ? "filled" : "outlined"} // Filled when selecting or selected
-        color={(isSelectingElement || selectedElementPath) ? "primary" : "default"} // Primary when selecting or selected
-        clickable
-        onClick={async () => {
-          if (isSelectingElement) {
-            // Currently selecting, do nothing (or implement cancel later)
-            console.log("Selection in progress...");
-            return;
-          }
-          if (selectedElementPath) {
-            // Currently selected, clear the selection
-            console.log("Clearing selected element path.");
-            setSelectedElementPath('');
-            // Optionally send a message to content script to stop highlighting if needed
-          } else {
-            // Not selecting and nothing selected, start selection
-            setIsSelectingElement(true);
-            setSelectedElementPath(''); // Ensure it's clear before starting
-            console.log("Starting element selection...");
-            setError(null); // Clear previous errors
-            try {
-              const [currentTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-              if (currentTab?.id) {
-                chrome.tabs.sendMessage(currentTab.id, { type: 'START_ELEMENT_SELECTION' }, (response) => {
-                  const lastError = chrome.runtime.lastError;
-                  if (lastError) {
-                    console.error("Error sending START_ELEMENT_SELECTION:", lastError.message);
-                    setError(`Could not initiate selection mode: ${lastError.message}`);
-                    setIsSelectingElement(false); // Reset state on error
-                  } else {
-                    console.log("START_ELEMENT_SELECTION message sent, response:", response);
-                    // Don't reset isSelectingElement here, wait for ELEMENT_SELECTED message
-                  }
-                });
-              } else {
-                throw new Error("Could not find active tab.");
-              }
-            } catch (error) {
-              console.error("Error starting element selection:", error);
-              setError(`Error initiating selection: ${error.message}`);
-              setIsSelectingElement(false); // Reset state on error
-            }
-          }
-        }}
-        sx={{
-          position: 'absolute',
-          bottom: 8,
-          left: 8,
-          fontSize: '0.75rem',
-          height: '28px',
-          borderColor: '#e0e0e0',
-          '& .MuiChip-label': { px: '8px' },
-          '& .MuiChip-icon': { ml: '6px', mr: '-4px' }
-        }}
-      />
-      <TextField
-        fullWidth multiline minRows={2} maxRows={3} variant="standard"
-        placeholder={animatedPlaceholder + '|'}
-        value={inputValue} onChange={handleInputChange} onKeyDown={handleKeyDown}
-        InputProps={{ disableUnderline: true, sx: { fontSize: '0.9rem' } }}
-        sx={{ flexGrow: 1, '& .MuiInputBase-root': { py: 0.5 } }} // Removed mb: 4
-        disabled={isLoading} // Disable input while loading
-      />
-      {/* Removed the Typography component that displayed the selected path */}
-      <IconButton
-        onClick={handleSubmit} disabled={isLoading || !inputValue.trim()}
-        sx={{
-          position: 'absolute', bottom: 8, right: 8, bgcolor: 'common.black', color: 'common.white',
-          width: 28, height: 28, '&:hover': { bgcolor: 'grey.800' },
-          '&.Mui-disabled': { backgroundColor: 'grey.300', color: 'grey.500' }
-        }}
-      >
-        {isLoading ? <CircularProgress size={16} sx={{ color: 'white' }}/> : <ArrowUpwardIcon sx={{ fontSize: '1rem' }} />}
-      </IconButton>
+    <Box sx={{ display: 'flex', flexDirection: 'column', p: 1, borderRadius: 3, bgcolor: 'grey.100', border: '1px solid #e0e0e0', position: 'relative', mb: 2, pb: selectedElementPath ? '48px' : '40px' }}>
+      <Chip icon={<MyLocationIcon sx={{ fontSize: '1rem', color: (isSelectingElement || selectedElementPath) ? 'primary.main' : 'grey.500' }} />} label={isSelectingElement ? "Selecting..." : selectedElementPath ? "Selected" : "Select"} size="small" variant={(isSelectingElement || selectedElementPath) ? "filled" : "outlined"} color={(isSelectingElement || selectedElementPath) ? "primary" : "default"} clickable onClick={async () => { if (isSelectingElement) return; if (selectedElementPath) { setSelectedElementPath(''); } else { setIsSelectingElement(true); setSelectedElementPath(''); setError(null); try { const [tab] = await chrome.tabs.query({ active: true, currentWindow: true }); if (tab?.id) chrome.tabs.sendMessage(tab.id, { type: 'START_ELEMENT_SELECTION' }, r => { if (chrome.runtime.lastError) { setError(`Selection error: ${chrome.runtime.lastError.message}`); setIsSelectingElement(false); }}); else throw new Error("No active tab."); } catch (e) { setError(`Selection error: ${e.message}`); setIsSelectingElement(false); }}}} sx={{ position: 'absolute', bottom: 8, left: 8, fontSize: '0.75rem', height: '28px', borderColor: '#e0e0e0', '& .MuiChip-label': { px: '8px' }, '& .MuiChip-icon': { ml: '6px', mr: '-4px' }}} />
+      <TextField fullWidth multiline minRows={2} maxRows={3} variant="standard" placeholder={animatedPlaceholder + '|'} value={inputValue} onChange={handleInputChange} onKeyDown={handleKeyDown} InputProps={{ disableUnderline: true, sx: { fontSize: '0.9rem' } }} sx={{ flexGrow: 1, '& .MuiInputBase-root': { py: 0.5 } }} disabled={isLoading} />
+      <IconButton onClick={handleSubmit} disabled={isLoading || (!inputValue.trim() && !currentChatId) } sx={{ position: 'absolute', bottom: 8, right: 8, bgcolor: 'common.black', color: 'common.white', width: 28, height: 28, '&:hover': { bgcolor: 'grey.800' }, '&.Mui-disabled': { backgroundColor: 'grey.300', color: 'grey.500' }}}>{isLoading ? <CircularProgress size={16} sx={{ color: 'white' }}/> : <ArrowUpwardIcon sx={{ fontSize: '1rem' }} />}</IconButton>
     </Box>
   );
 
   const renderChatInputArea = () => (
-    <Box sx={{
-      display: 'flex', flexDirection: 'row', alignItems: 'center',
-      p: 1, px: 2, pb: 2, borderRadius: 0, bgcolor: 'grey.100',
-      border: '1px solid #e0e0e0', mt: 'auto'
-    }}>
-      <TextField
-        fullWidth multiline={false} variant="standard" placeholder="Ask Magix..."
-        value={inputValue} onChange={handleInputChange} onKeyDown={handleKeyDown}
-        InputProps={{ disableUnderline: true, sx: { fontSize: '0.9rem' } }}
-        sx={{ mr: 1, '& .MuiInputBase-root': { py: 1 } }}
-        disabled={isLoading} // Disable input while loading
-      />
-      <IconButton
-        onClick={handleSubmit} disabled={isLoading || !inputValue.trim()}
-        sx={{
-          bgcolor: 'common.black', color: 'common.white', width: 28, height: 28,
-          '&:hover': { bgcolor: 'grey.800' },
-          '&.Mui-disabled': { backgroundColor: 'grey.300', color: 'grey.500' }
-        }}
-      >
-         {isLoading ? <CircularProgress size={16} sx={{ color: 'white' }}/> : <ArrowUpwardIcon sx={{ fontSize: '1rem' }} />}
-      </IconButton>
+    <Box sx={{ display: 'flex', flexDirection: 'row', alignItems: 'center', p: 1, px: 2, pb: 2, borderRadius: 0, bgcolor: 'grey.100', border: '1px solid #e0e0e0', mt: 'auto' }}>
+      <TextField fullWidth multiline={false} variant="standard" placeholder="Ask Magix..." value={inputValue} onChange={handleInputChange} onKeyDown={handleKeyDown} InputProps={{ disableUnderline: true, sx: { fontSize: '0.9rem' } }} sx={{ mr: 1, '& .MuiInputBase-root': { py: 1 } }} disabled={isLoading} />
+      <IconButton onClick={handleSubmit} disabled={isLoading || !inputValue.trim()} sx={{ bgcolor: 'common.black', color: 'common.white', width: 28, height: 28, '&:hover': { bgcolor: 'grey.800' }, '&.Mui-disabled': { backgroundColor: 'grey.300', color: 'grey.500' }}}>{isLoading ? <CircularProgress size={16} sx={{ color: 'white' }}/> : <ArrowUpwardIcon sx={{ fontSize: '1rem' }} />}</IconButton>
     </Box>
   );
 
   const renderHomeScreen = () => (
     <Box sx={{ p: 2, display: 'flex', flexDirection: 'column' }}>
-      <Typography variant="h6" component="h1" sx={{ textAlign: 'center', mb: 2, fontSize: '1.05rem', fontWeight: 600 }}>
-        Modify any website 🪄
-      </Typography>
+      <Typography variant="h6" component="h1" sx={{ textAlign: 'center', mb: 2, fontSize: '1.05rem', fontWeight: 600 }}>Modify any website 🪄</Typography>
       {renderHomeInputArea()}
       {session && (
-        <Box sx={{ mt: 2 }}> {/* Removed flexGrow and overflowY */}
-          <Typography variant="body2" sx={{ mb: 1, fontWeight: 500, color: 'text.secondary' }}>
-            Your Modifications: {/* Changed text */}
-          </Typography>
-          <List dense sx={{
-            pt: 0,
-            maxHeight: '350px', // Increased height
-            overflowY: 'auto',
-            // Hide scrollbar styles
-            '&::-webkit-scrollbar': {
-              display: 'none'
-            },
-            scrollbarWidth: 'none', // Firefox
-            '-ms-overflow-style': 'none' // IE and Edge
-          }}>
+        <Box sx={{ mt: 2 }}>
+          <Typography variant="body2" sx={{ mb: 1, fontWeight: 500, color: 'text.secondary' }}>Your Modifications:</Typography>
+          <List dense sx={{ pt: 0, maxHeight: '350px', overflowY: 'auto', '&::-webkit-scrollbar': { display: 'none' }, scrollbarWidth: 'none', '-ms-overflow-style': 'none' }}>
             {userScripts.length > 0 ? (
               userScripts.map((script) => (
-                <ListItem
-                  key={script.id}
-                  secondaryAction={
-                    <Switch
-                      edge="end"
-                      checked={script.is_active}
-                      disabled={true} // Disable toggle functionality for now
-                      inputProps={{ 'aria-labelledby': `switch-list-label-${script.id}` }}
-                      sx={{
-                        transform: 'scale(0.75)',
-                        '& .MuiSwitch-switchBase.Mui-checked': { color: 'green', '&:hover': { backgroundColor: 'rgba(0, 128, 0, 0.08)' }, },
-                        '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { backgroundColor: 'green', },
-                        // Style disabled state if needed
-                        '& .Mui-disabled': { cursor: 'not-allowed' }
-                      }}
-                    />
-                  }
-                  sx={{ border: '1px solid #e0e0e0', borderRadius: 2, mb: 1, py: 0.5 }}
-                >
-                  <ListItemText
-                    id={`switch-list-label-${script.id}`}
-                    primary={script.title}
-                    secondary={script.domain_pattern || 'All sites'} // Show domain or fallback
-                    primaryTypographyProps={{ sx: { fontSize: '0.9rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }}
-                    secondaryTypographyProps={{ sx: { fontSize: '0.8rem' } }}
-                  />
-                </ListItem>
-              ))
-            ) : (
-              <Typography variant="caption" color="text.secondary" sx={{ textAlign: 'center', display: 'block', mt: 2 }}>
-                No modifications saved yet. Create one using the input above! {/* Changed text */}
-              </Typography>
-            )}
+                <ListItemButton key={script.id} onClick={() => handleScriptItemClick(script)} sx={{ border: '1px solid #e0e0e0', borderRadius: 2, mb: 1, py: 0.5 }}>
+                  <ListItemText id={`script-list-item-${script.id}`} primary={script.title} secondary={script.domain_pattern || 'All sites'} primaryTypographyProps={{ sx: { fontSize: '0.9rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }} secondaryTypographyProps={{ sx: { fontSize: '0.8rem' } }} />
+                  <IconButton
+                    edge="end"
+                    aria-label="delete"
+                    size="small"
+                    onClick={(e) => {
+                      triggerRef.current = e.currentTarget; // Store the clicked button
+                      e.stopPropagation(); // Prevent ListItemButton click
+                      setScriptPendingDeletion(script); // Store the script object
+                      setIsConfirmDeleteDialogOpen(true); // Open the dialog
+                    }}
+                  >
+                    <DeleteIcon sx={{ color: 'grey.500', fontSize: '1.1rem' }} />
+                  </IconButton>
+                </ListItemButton>
+              )) ) : ( <Typography variant="caption" color="text.secondary" sx={{ textAlign: 'center', display: 'block', mt: 2 }}>No modifications saved yet. Create one using the input above!</Typography> )}
           </List>
          </Box>
        )}
@@ -702,62 +652,18 @@ function App() {
 
   const renderChatScreen = () => (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      {/* Fixed Header */}
-      <Box sx={{
-        position: 'sticky', top: 0, zIndex: 1, bgcolor: 'background.paper',
-        p: 1, mb: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center'
-      }}>
-         <Box sx={{ width: 28 }} />
-         <Switch
-            size="small" checked={true} inputProps={{ 'aria-label': 'dummy toggle' }}
-            sx={{
-              transform: 'scale(0.75)',
-              '& .MuiSwitch-switchBase.Mui-checked': { color: 'green', '&:hover': { backgroundColor: 'rgba(0, 128, 0, 0.08)' }, },
-              '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { backgroundColor: 'green', },
-            }}
-         />
+      <Box sx={{ position: 'sticky', top: 0, zIndex: 1, bgcolor: 'background.paper', p: 1, mb: 1, display: 'flex', alignItems: 'center' }}>
+         <IconButton onClick={() => { setCurrentChatId(null); /* useEffect will handle view change */ }} size="small" sx={{ mr: 1}}><ArrowBackIcon /></IconButton>
+         <Typography variant="subtitle1" sx={{ flexGrow: 1, textAlign: 'center', fontWeight: 500, fontSize: '0.95rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{currentChatTitle || "Chat"}</Typography>
+         <Box sx={{ width: 40 }} />
       </Box>
-
-      {/* Chat Message Area */}
       <Box ref={chatContainerRef} sx={{ flexGrow: 1, overflowY: 'auto', p: 2, display: 'flex', flexDirection: 'column', gap: 1 }}>
         {messages.map((msg) => (
           <Box key={msg.id} sx={{ alignSelf: msg.sender === 'user' ? 'flex-end' : 'flex-start', maxWidth: '80%' }}>
-            {msg.status === 'processing' ? (
-              <Paper className="shimmer-bubble" elevation={0} sx={{ p: 1, borderRadius: 2, bgcolor: 'grey.200', display: 'flex', alignItems: 'center', gap: 1, overflow: 'hidden', position: 'relative' }}>
-                 <Typography variant="body2" sx={{ fontWeight: 500, color: 'text.secondary', fontSize: '0.9rem' }}>
-                   Doing magix...
-                 </Typography>
-              </Paper>
-            ) : msg.sender === 'user' ? (
-               <Paper elevation={0} sx={{ p: 1.5, borderRadius: 2, bgcolor: 'grey.200' }}>
-                 <Typography variant="body2" sx={{ fontSize: '0.9rem', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                   {msg.text}
-                 </Typography>
-               </Paper>
-            ) : msg.codeToCopy ? ( // Check if it's a fallback message with code
-               <Box>
-                 <Typography variant="body2" sx={{ fontSize: '0.9rem', whiteSpace: 'pre-wrap', wordBreak: 'break-word', mb: 1 }}>
-                   {msg.text}
-                 </Typography>
-                 <Paper variant="outlined" sx={{ p: 1, bgcolor: 'grey.100', position: 'relative', borderRadius: 1, overflowX: 'auto' }}>
-                   <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all', fontSize: '0.8rem' }}>
-                     <code>{msg.codeToCopy}</code>
-                   </pre>
-                   <IconButton
-                     size="small"
-                     onClick={() => navigator.clipboard.writeText(msg.codeToCopy)}
-                     sx={{ position: 'absolute', top: 4, right: 4 }}
-                     title="Copy code"
-                   >
-                     <ContentCopyIcon sx={{ fontSize: '0.9rem' }} /> {/* Use Material UI Copy Icon */}
-                   </IconButton>
-                 </Paper>
-               </Box>
-            ) : ( // Regular Magix text response
-               <Typography variant="body2" sx={{ fontSize: '0.9rem', whiteSpace: 'pre-wrap', wordBreak: 'break-word', alignSelf: 'flex-start' }}>
-                  {msg.text}
-               </Typography>
-            )}
+            {msg.status === 'processing' ? ( <Paper className="shimmer-bubble" elevation={0} sx={{ p: 1, borderRadius: 2, bgcolor: 'grey.200', display: 'flex', alignItems: 'center', gap: 1, overflow: 'hidden', position: 'relative' }}><Typography variant="body2" sx={{ fontWeight: 500, color: 'text.secondary', fontSize: '0.9rem' }}>Doing magix...</Typography></Paper>
+            ) : msg.sender === 'user' ? ( <Paper elevation={0} sx={{ p: 1.5, borderRadius: 2, bgcolor: 'grey.200' }}><Typography variant="body2" sx={{ fontSize: '0.9rem', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{msg.text}</Typography></Paper>
+            ) : msg.codeToCopy ? ( <Box><Typography variant="body2" sx={{ fontSize: '0.9rem', whiteSpace: 'pre-wrap', wordBreak: 'break-word', mb: 1 }}>{msg.text}</Typography><Paper variant="outlined" sx={{ p: 1, bgcolor: 'grey.100', position: 'relative', borderRadius: 1, overflowX: 'auto' }}><pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all', fontSize: '0.8rem' }}><code>{msg.codeToCopy}</code></pre><IconButton size="small" onClick={() => navigator.clipboard.writeText(msg.codeToCopy)} sx={{ position: 'absolute', top: 4, right: 4 }} title="Copy code"><ContentCopyIcon sx={{ fontSize: '0.9rem' }} /></IconButton></Paper></Box>
+            ) : ( <Typography variant="body2" sx={{ fontSize: '0.9rem', whiteSpace: 'pre-wrap', wordBreak: 'break-word', alignSelf: 'flex-start' }}>{msg.text}</Typography> )}
           </Box>
         ))}
         <div ref={chatEndRef} />
@@ -768,141 +674,59 @@ function App() {
 
   const renderAccountSettingsScreen = () => (
     <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', height: '100%' }}>
-       {/* Header with Back Button */}
        <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-         <IconButton onClick={() => setCurrentView('home')} size="small">
-           <ArrowBackIcon />
-         </IconButton>
-         <Typography variant="h6" sx={{ ml: 1, fontSize: '1.1rem', fontWeight: 600 }}>
-           Account Settings
-         </Typography>
+         <IconButton onClick={() => setCurrentView('home')} size="small"><ArrowBackIcon /></IconButton>
+         <Typography variant="h6" sx={{ ml: 1, fontSize: '1.1rem', fontWeight: 600 }}>Account Settings</Typography>
        </Box>
-
-       {/* Tabs - Updated indicator color */}
        <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
-         <Tabs
-           value={settingsTab}
-           onChange={handleSettingsTabChange}
-           aria-label="account settings tabs"
-           textColor="inherit" // Use inherit to allow sx override
-           sx={{
-             '& .MuiTabs-indicator': { backgroundColor: 'common.black' },
-             '& .Mui-selected': { color: 'common.black', fontWeight: 600 }, // Style selected tab text
-           }}
-          >
+         <Tabs value={settingsTab} onChange={handleSettingsTabChange} aria-label="account settings tabs" textColor="inherit" sx={{ '& .MuiTabs-indicator': { backgroundColor: 'common.black' }, '& .Mui-selected': { color: 'common.black', fontWeight: 600 }, }}>
            <Tab label="Account Info" {...a11yProps(0)} sx={{ textTransform: 'none', fontSize: '0.9rem' }} />
            <Tab label="Billing" {...a11yProps(1)} sx={{ textTransform: 'none', fontSize: '0.9rem' }} />
          </Tabs>
        </Box>
-
-       {/* Tab Panels */}
        <TabPanel value={settingsTab} index={0}>
-         {/* Account Info Content - Added specific padding */}
          <Box sx={{ pt: 3, px: 1 }}>
            <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-             <TextField
-                label="Name"
-                variant="outlined"
-                size="small"
-                value={userName}
-                onChange={(e) => setUserName(e.target.value)}
-                // Added border radius & font size styling
-                InputProps={{ sx: { fontSize: '0.9rem' } }}
-                sx={{ flexGrow: 1, mr: 1, '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
-            />
-            {/* Updated button styling: black, no elevation */}
-            <Button variant="contained" size="small" onClick={handleNameUpdate} disableElevation sx={{ textTransform: 'none', borderRadius: 2, bgcolor: 'common.black', '&:hover': { bgcolor: 'grey.800' } }}>
-                Update
-            </Button>
+             <TextField label="Name" variant="outlined" size="small" value={userName} onChange={(e) => setUserName(e.target.value)} InputProps={{ sx: { fontSize: '0.9rem' } }} sx={{ flexGrow: 1, mr: 1, '& .MuiOutlinedInput-root': { borderRadius: 2 } }} />
+            <Button variant="contained" size="small" onClick={handleNameUpdate} disableElevation sx={{ textTransform: 'none', borderRadius: 2, bgcolor: 'common.black', '&:hover': { bgcolor: 'grey.800' } }}>Update</Button>
          </Box>
-         <TextField
-            label="Email"
-            variant="outlined"
-            size="small"
-            disabled
-            value={session?.user?.email || ''}
-            fullWidth
-            // Added border radius & font size styling
-            InputProps={{ sx: { fontSize: '0.9rem' } }}
-            sx={{ mb: 3, '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
-         />
-
+         <TextField label="Email" variant="outlined" size="small" disabled value={session?.user?.email || ''} fullWidth InputProps={{ sx: { fontSize: '0.9rem' } }} sx={{ mb: 3, '& .MuiOutlinedInput-root': { borderRadius: 2 } }} />
          <Divider sx={{ my: 2 }} />
-
-         {/* Danger Zone - Reduced text weight */}
          <Box sx={{ mt: 2 }}>
-            <Typography variant="subtitle2" color="error" sx={{ mb: 1, fontWeight: 500 }}>
-                Danger Zone
-            </Typography>
-            {/* Changed variant to outlined */}
-            <Button variant="outlined" color="error" size="small" onClick={handleDeleteAccount} disableElevation sx={{ textTransform: 'none', borderRadius: 2 }}>
-                Delete Account
-            </Button>
+            <Typography variant="subtitle2" color="error" sx={{ mb: 1, fontWeight: 500 }}>Danger Zone</Typography>
+            <Button variant="outlined" color="error" size="small" onClick={handleDeleteAccount} disableElevation sx={{ textTransform: 'none', borderRadius: 2 }}>Delete Account</Button>
          </Box>
-
          <Divider sx={{ my: 3 }} />
-
-         {/* Links - Updated href and added target */}
          <Box sx={{ display: 'flex', justifyContent: 'center', gap: 2, flexWrap: 'wrap' }}>
             <Link href="https://trymagix.com/privacy" target="_blank" rel="noopener noreferrer" underline="hover" variant="caption" color="text.secondary">Privacy Policy</Link>
             <Link href="https://trymagix.com/terms" target="_blank" rel="noopener noreferrer" underline="hover" variant="caption" color="text.secondary">Terms of Service</Link>
             <Link href="https://trymagix.com/contact" target="_blank" rel="noopener noreferrer" underline="hover" variant="caption" color="text.secondary">Contact Us</Link>
          </Box>
-        </Box> {/* Close specific padding Box */}
+        </Box>
        </TabPanel>
        <TabPanel value={settingsTab} index={1}>
-         {/* Billing Content - Added specific padding */}
          <Box sx={{ pt: 3, px: 1 }}>
-           {/* Pro User Pill - Changed color */}
            <Chip label="Pro User" size="small" sx={{ mb: 2, bgcolor: 'common.black', color: 'common.white' }} />
-           {/* Usage Text */}
            <Typography variant="body2" sx={{ mb: 1 }}>Monthly Limits: 1/10 messages used.</Typography>
-           {/* Progress Bar - Added dynamic color */}
-           <LinearProgress
-             variant="determinate"
-             value={10} // Dummy value (1/10 = 10%)
-             color={10 >= 80 ? 'error' : 10 >= 50 ? 'warning' : 'success'} // Dynamic color based on value
-             sx={{ mb: 2, height: 8, borderRadius: 1 }}
-            />
-           {/* Updated Manage Billing Button */}
-           <Button variant="contained" size="small" disableElevation sx={{ textTransform: 'none', borderRadius: 2, bgcolor: 'common.black', '&:hover': { bgcolor: 'grey.800' } }}>
-             Manage Billing (Dummy)
-           </Button>
-        </Box> {/* Close specific padding Box for Billing */}
+           <LinearProgress variant="determinate" value={10} color={10 >= 80 ? 'error' : 10 >= 50 ? 'warning' : 'success'} sx={{ mb: 2, height: 8, borderRadius: 1 }} />
+           <Button variant="contained" size="small" disableElevation sx={{ textTransform: 'none', borderRadius: 2, bgcolor: 'common.black', '&:hover': { bgcolor: 'grey.800' } }}>Manage Billing (Dummy)</Button>
+        </Box>
        </TabPanel>
     </Box>
   );
 
-  // --- Main Return ---
   return (
-    <Box sx={{
-      display: 'flex', flexDirection: 'column', height: '100vh',
-      bgcolor: 'background.paper',
-      justifyContent: currentView === 'home' && !session ? 'center' : 'flex-start'
-    }}>
-      {/* Profile Icon */}
-      {session && currentView !== 'settings' && (
+    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh', bgcolor: 'background.paper', justifyContent: currentView === 'home' && !session ? 'center' : 'flex-start' }}>
+      {session && currentView !== 'settings' && currentView !== 'chat' && (
         <IconButton onClick={handleAccountMenuOpen} size="small" sx={{ position: 'absolute', top: 16, left: 16, zIndex: 2 }}>
            <AccountCircleIcon sx={{ color: 'grey.600', fontSize: '1.25rem' }} />
         </IconButton>
       )}
-
-       {/* Account Popover */}
-       <Popover
-          id={accountMenuId}
-          open={openAccountMenu}
-          anchorEl={accountMenuAnchorEl}
-          onClose={handleAccountMenuClose}
-          anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
-          transformOrigin={{ vertical: 'top', horizontal: 'left'}}
-          slotProps={{ paper: { sx: { width: '200px', mt: 1, borderRadius: 2 } } }}
-        >
+       <Popover id={accountMenuId} open={openAccountMenu} anchorEl={accountMenuAnchorEl} onClose={handleAccountMenuClose} anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }} transformOrigin={{ vertical: 'top', horizontal: 'left'}} slotProps={{ paper: { sx: { width: '200px', mt: 1, borderRadius: 2 } } }} >
           <List dense>
-            <ListItem>
-              <ListItemText primary="Monthly messages:" secondary="0/10" />
-            </ListItem>
+            <ListItem><ListItemText primary="Monthly messages:" secondary="0/10" /></ListItem>
             {currentView === 'chat' ? (
-              <ListItemButton onClick={() => { setCurrentView('home'); handleAccountMenuClose(); }}>
+              <ListItemButton onClick={() => { setCurrentView('home'); setCurrentChatId(null); setMessages([]); setCurrentScriptContentForChat(''); setCurrentChatTitle(''); handleAccountMenuClose(); }}>
                 <ListItemText primary="Go to dashboard" />
               </ListItemButton>
             ) : (
@@ -923,17 +747,39 @@ function App() {
           </List>
         </Popover>
 
-      {/* Main Content Area */}
       {currentView === 'chat' ? renderChatScreen()
        : currentView === 'settings' ? renderAccountSettingsScreen()
        : renderHomeScreen()}
+
+      {/* Confirmation Dialog */}
+      <Dialog
+        open={isConfirmDeleteDialogOpen}
+        onClose={handleCloseConfirmDialog} // Use the new handler
+        aria-labelledby="alert-dialog-title"
+        aria-describedby="alert-dialog-description"
+      >
+        <DialogTitle id="alert-dialog-title">
+          {"Confirm Delete"}
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText id="alert-dialog-description">
+            Are you sure you want to permanently delete this script? This action will remove it from your list and the database, and cannot be undone. Associated chat history will remain but will no longer be linked to this script.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseConfirmDialog}>Cancel</Button>
+          <Button onClick={handleConfirmDeleteScript} autoFocus color="error">
+            Confirm Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
+
 
       {error && (
         <Typography color="error" sx={{ mt: 2, textAlign: 'center', p: 2 }}>
           Error: {error}
         </Typography>
       )}
-
     </Box>
   );
 }
