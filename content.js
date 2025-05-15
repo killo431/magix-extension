@@ -1,6 +1,6 @@
 // content.js
 
-console.log("Magix content script loaded.");
+// console.log("Magix content script loaded.");
 
 let selectingModeActive = false; // Flag to track if selection mode is on
 let currentHoverElement = null; // To keep track of the currently hovered element for styling
@@ -158,11 +158,11 @@ function handleClick(event) {
   event.stopPropagation(); // Stop the click from propagating further
 
   const clickedElement = event.target;
-  console.log("Element clicked:", clickedElement);
+  // console.log("Element clicked:", clickedElement);
 
   // Generate the CSS selector
   const selector = generateCssSelector(clickedElement);
-  console.log("Generated Selector:", selector);
+  // console.log("Generated Selector:", selector);
 
   // Remove highlight from the clicked element before exiting
   removeHighlight(clickedElement);
@@ -173,7 +173,7 @@ function handleClick(event) {
     if (chrome.runtime.lastError) {
       console.error('Error sending ELEMENT_SELECTED message:', chrome.runtime.lastError.message);
     } else {
-      console.log('Sidepanel responded to click:', response);
+      // console.log('Sidepanel responded to click:', response);
     }
   });
 
@@ -185,7 +185,7 @@ function handleClick(event) {
 function startSelectionMode() {
   if (selectingModeActive) return; // Already active
   selectingModeActive = true;
-  console.log("Starting element selection mode...");
+  // console.log("Starting element selection mode...");
   document.addEventListener('mouseover', handleMouseOver, true); // Use capture phase
   document.addEventListener('mousedown', handleMouseDown, true); // Add mousedown listener in capture phase
   document.addEventListener('click', handleClick, true); // Use capture phase
@@ -197,7 +197,7 @@ function startSelectionMode() {
 function exitSelectionMode() {
   if (!selectingModeActive) return;
   selectingModeActive = false;
-  console.log("Exiting element selection mode...");
+  // console.log("Exiting element selection mode...");
   // Remove highlight from the last hovered element when exiting
   if (currentHoverElement) {
     removeHighlight(currentHoverElement);
@@ -212,7 +212,7 @@ function exitSelectionMode() {
 
 // --- Message Listener ---
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  console.log("Content script received message:", message);
+  // console.log("Content script received message:", message);
 
   if (message.type === 'START_ELEMENT_SELECTION') {
     startSelectionMode();
@@ -253,15 +253,15 @@ fab.id = 'magix-fab';
 fab.addEventListener('click', () => {
   // Prevent FAB click from triggering element selection if active
   if (selectingModeActive) {
-     console.log("Selection mode active, ignoring FAB click for opening panel.");
+     // console.log("Selection mode active, ignoring FAB click for opening panel.");
      return;
   }
-  console.log('Magix FAB clicked. Sending message to background script...');
+  // console.log('Magix FAB clicked. Sending message to background script...');
   chrome.runtime.sendMessage({ action: "openSidePanel" }, (response) => {
     if (chrome.runtime.lastError) {
       console.error('Error sending message:', chrome.runtime.lastError.message);
     } else {
-      console.log('Background script responded:', response);
+      // console.log('Background script responded:', response);
     }
   });
 });
@@ -270,13 +270,13 @@ fab.addEventListener('click', () => {
 // Ensure body exists before appending
 if (document.body) {
     document.body.appendChild(fab);
-    console.log("Magix FAB added to page.");
+    // console.log("Magix FAB added to page.");
 } else {
     // Wait for the body to load if script runs too early (though unlikely with default injection)
     document.addEventListener('DOMContentLoaded', () => {
         if (document.body) {
             document.body.appendChild(fab);
-            console.log("Magix FAB added to page after DOMContentLoaded.");
+            // console.log("Magix FAB added to page after DOMContentLoaded.");
         } else {
             console.error("Magix FAB could not be added: document.body not found.");
         }

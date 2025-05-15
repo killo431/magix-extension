@@ -103,12 +103,12 @@ function App() {
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
-      console.log("Initial session:", session);
+      // console.log("Initial session:", session);
     });
     const { data: authListener } = supabase.auth.onAuthStateChange(
       (_event, session) => {
         setSession(session);
-        console.log("Auth state changed:", _event, session);
+        // console.log("Auth state changed:", _event, session);
         setIsLoading(false);
         setError(null);
         if (!session) {
@@ -127,7 +127,7 @@ function App() {
 
   const fetchUserScripts = async () => {
     if (session?.user?.id) {
-      console.log("Fetching scripts for user:", session.user.id);
+      // console.log("Fetching scripts for user:", session.user.id);
       try {
         const { data, error } = await supabase
           .from('scripts')
@@ -136,7 +136,7 @@ function App() {
           .order('created_at', { ascending: false });
 
         if (error) throw error;
-        console.log("Fetched scripts:", data);
+        // console.log("Fetched scripts:", data);
         setUserScripts(data || []);
       } catch (fetchError) {
         console.error("Error fetching user scripts:", fetchError);
@@ -156,7 +156,7 @@ function App() {
   useEffect(() => {
     const loadChatData = async () => {
       if (currentChatId && session?.user?.id) {
-        console.log(`Loading data for chat ID: ${currentChatId}`);
+        // console.log(`Loading data for chat ID: ${currentChatId}`);
         setIsLoading(true);
         setError(null);
         try {
@@ -252,8 +252,8 @@ function App() {
   const openAccountMenu = Boolean(accountMenuAnchorEl);
   const accountMenuId = openAccountMenu ? 'account-popover' : undefined;
   const handleSettingsTabChange = (event, newValue) => setSettingsTab(newValue);
-  const handleNameUpdate = () => console.log("Update name clicked:", userName);
-  const handleDeleteAccount = () => console.log("Delete account clicked");
+  const handleNameUpdate = () => { /* console.log("Update name clicked:", userName); */ }
+  const handleDeleteAccount = () => { /* console.log("Delete account clicked"); */ }
 
   const handleSignIn = async () => {
     setError(null); setIsLoading(true);
@@ -377,13 +377,13 @@ function App() {
             if (type === 'CSS') {
               // Inject CSS directly
               await chrome.scripting.insertCSS({ target: { tabId: tab.id }, css: newCode });
-              console.log(`CSS injected for script ${savedScriptId}`);
+              // console.log(`CSS injected for script ${savedScriptId}`);
               // CSS doesn't need separate registration via background script currently
               if (savedScriptId) { // Ensure DB save was successful before adding success message
                 setMessages(prev => [...prev, { 
                   id: `ai-code-success-${Date.now()}`, 
                   sender: 'magix', 
-                  text: 'Alright, I\'ve applied the changes! Please refresh the page and take a look and let me know what you think or if there\'s anything else.', 
+                  text: 'Alright, I\'ve applied the changes! Take a look and let me know what you think or if there\'s anything else.', 
                   chat_id: activeChatId 
                 }]);
               }
@@ -402,11 +402,11 @@ function App() {
                   setError(`Script registration failed: ${eMsg}`);
                   setMessages(p => [...p, {id: `err-${Date.now()}`, sender:'magix', text: `Script registration error: ${eMsg}`, chat_id: activeChatId}]);
                 } else if (res?.success) {
-                  console.log(`Script ${savedScriptId} registered successfully via background.`);
+                  // console.log(`Script ${savedScriptId} registered successfully via background.`);
                   setMessages(prev => [...prev, { 
                     id: `ai-code-success-${Date.now()}`, 
                     sender: 'magix', 
-                    text: 'Alright, I\'ve applied the changes! Please refresh the page and take a look and let me know what you think or if there\'s anything else.', 
+                    text: 'Alright, I\'ve applied the changes! Take a look and let me know what you think or if there\'s anything else.', 
                     chat_id: activeChatId 
                   }]);
                 }
@@ -433,7 +433,7 @@ function App() {
   const saveScriptToSupabase = async (userId, code, promptText, tabUrl, chatId, isUpdatingExistingScriptInChat = false) => {
     let domain = '*';
     try { if (tabUrl && !tabUrl.startsWith('chrome://')) domain = new URL(tabUrl).hostname; } catch (e) { console.error("URL parse error:", e); }
-    console.log(`saveScriptToSupabase: ChatID: ${chatId}, Update: ${isUpdatingExistingScriptInChat}`);
+    // console.log(`saveScriptToSupabase: ChatID: ${chatId}, Update: ${isUpdatingExistingScriptInChat}`);
     let scriptIdToReturn = null; // Variable to hold the ID to return
 
     try {
@@ -452,7 +452,7 @@ function App() {
 
         if (updateErr) throw new Error(`Failed to update script: ${updateErr.message}`);
 
-        console.log(`Script ${scriptId} updated successfully.`);
+        // console.log(`Script ${scriptId} updated successfully.`);
         setCurrentScriptContentForChat(code); // Update local state
         fetchUserScripts(); // Refresh script list
         scriptIdToReturn = scriptId; // Set ID to return
@@ -469,7 +469,7 @@ function App() {
         if (!newScript?.id) throw new Error("Failed to retrieve ID after inserting new script.");
 
         scriptIdToReturn = newScript.id; // Set ID to return
-        console.log(`New script ${scriptIdToReturn} saved successfully.`);
+        // console.log(`New script ${scriptIdToReturn} saved successfully.`);
         setCurrentScriptContentForChat(code); // Update local state
 
         // Link to chat if a chatId was provided (should be the case if called from handleSubmit)
@@ -484,7 +484,7 @@ function App() {
             console.error(`Failed to link script ${scriptIdToReturn} to chat ${chatId}: ${linkErr.message}`);
             setError(`Failed to link script to chat: ${linkErr.message}`); // Show error to user
           } else {
-            console.log(`Script ${scriptIdToReturn} linked to chat ${chatId}.`);
+            // console.log(`Script ${scriptIdToReturn} linked to chat ${chatId}.`);
           }
         }
         fetchUserScripts(); // Refresh script list
@@ -501,7 +501,7 @@ function App() {
   const handleScriptItemClick = async (script) => {
     if (!session?.user?.id) { handleSignIn(); return; }
     setIsLoading(true); setError(null);
-    console.log("Script item clicked:", script.id, script.title);
+    // console.log("Script item clicked:", script.id, script.title);
 
     try {
       const { data: existingChats, error: fetchChatError } = await supabase
@@ -515,11 +515,11 @@ function App() {
 
       if (existingChats && existingChats.length > 0) {
         const chat = existingChats[0];
-        console.log("Found existing chat for script:", chat.id);
+        // console.log("Found existing chat for script:", chat.id);
         setCurrentChatId(chat.id); // This will trigger the useEffect to load messages & set view
         // useEffect will also set title and script content
       } else {
-        console.log("No existing chat for script, creating new one for script ID:", script.id);
+        // console.log("No existing chat for script, creating new one for script ID:", script.id);
         const newChatTitle = script.title || 'Chat about script';
         const { data: newChatData, error: newChatError } = await supabase
           .from('chats')
@@ -561,7 +561,7 @@ function App() {
     const scriptToDelete = scriptPendingDeletion; // Keep a reference before clearing state
 
     // 1. Request removal of local effect
-    console.log(`Requesting removal of local effect for script: ${scriptToDelete.id}`);
+    // console.log(`Requesting removal of local effect for script: ${scriptToDelete.id}`);
     chrome.runtime.sendMessage({
       type: 'REMOVE_SCRIPT_EFFECT',
       scriptId: scriptToDelete.id,
@@ -576,11 +576,11 @@ function App() {
          setError(`Failed to remove script effect: ${response.error}`);
          // Don't proceed to DB delete if local removal fails
        } else {
-         console.log("Script effect removal message processed successfully by background script.");
+         // console.log("Script effect removal message processed successfully by background script.");
 
          // 2. Delete from database
          if (scriptToDelete?.id && session?.user?.id) {
-           console.log(`Attempting to delete script ${scriptToDelete.id} from database.`);
+           // console.log(`Attempting to delete script ${scriptToDelete.id} from database.`);
            try {
              const { error: deleteError } = await supabase
                .from('scripts')
@@ -592,7 +592,7 @@ function App() {
                throw deleteError;
              }
 
-             console.log(`Script ${scriptToDelete.id} deleted from database.`);
+             // console.log(`Script ${scriptToDelete.id} deleted from database.`);
              fetchUserScripts(); // Refresh the list from DB
              // Optionally, show a success notification/toast here
            } catch (dbError) {
@@ -779,7 +779,7 @@ function App() {
         </DialogTitle>
         <DialogContent>
           <DialogContentText id="alert-dialog-description">
-            Are you sure you want to permanently delete this modification? This action cannot be undone.
+            Are you sure you want to permanently delete this script? This action will remove it from your list and the database, and cannot be undone. Associated chat history will remain but will no longer be linked to this script.
           </DialogContentText>
         </DialogContent>
         <DialogActions>
