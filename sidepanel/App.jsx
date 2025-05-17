@@ -338,7 +338,7 @@ function App() {
 
         let profileNeedsUpdateForReset = false;
         if (currentYearUTC > lastRequestYearUTC || (currentYearUTC === lastRequestYearUTC && currentMonthUTC > lastRequestMonthUTC)) {
-          console.log("Monthly quota reset for user:", userId);
+          // console.log("Monthly quota reset for user:", userId); // Removed for production
           currentRequestCount = 10; // Reset count
           profileNeedsUpdateForReset = true; 
         }
@@ -505,7 +505,7 @@ function App() {
             .eq('id', userId);
           if (decrementError) throw decrementError;
           setUserProfile(prev => ({ ...prev, request_count: newCount, last_request_at: new Date().toISOString() }));
-          console.log(`Request count decremented for user ${userId}. New count: ${newCount}`);
+          // console.log(`Request count decremented for user ${userId}. New count: ${newCount}`); // Removed for production
         } catch (e) {
           console.error("Error decrementing request count:", e);
           // Non-critical for the current interaction, but log it.

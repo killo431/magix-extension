@@ -190,4 +190,4 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 }); // End of onMessage listener
 
 
-console.log('Magix background service worker started.');
+// console.log('Magix background service worker started.');
