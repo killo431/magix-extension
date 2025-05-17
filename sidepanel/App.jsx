@@ -102,32 +102,39 @@ function App() {
 
   const [userProfile, setUserProfile] = useState(null);
   const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState(false); 
+  const [isWelcomeModalOpen, setIsWelcomeModalOpen] = useState(false);
+  const [hasShownWelcomeModalThisSession, setHasShownWelcomeModalThisSession] = useState(false);
 
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       // console.log("Initial session:", session);
+      // if (session && !hasShownWelcomeModalThisSession) { // Check on initial load too
+      //   setIsWelcomeModalOpen(true);
+      //   setHasShownWelcomeModalThisSession(true);
+      // }
     });
     const { data: authListener } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
+      (_event, session) => { // _event can be used for logging if needed, but not for triggering this modal
         setSession(session);
-        // console.log("Auth state changed:", _event, session);
-        setIsLoading(false);
-        setError(null);
-        if (!session) {
+        setIsLoading(false); 
+        setError(null);     
+        
+        if (!session) { // On SIGNED_OUT or if session becomes null
           setCurrentView('home');
           setMessages([]);
           setCurrentChatId(null);
           setCurrentScriptContentForChat('');
           setCurrentChatTitle('');
+          setHasShownWelcomeModalThisSession(false); // Reset for next login session
         }
       }
     );
     return () => {
       authListener?.subscription.unsubscribe();
     };
-  }, []);
+  }, [hasShownWelcomeModalThisSession]); // Add hasShownWelcomeModalThisSession to dependency array
 
   const fetchUserScripts = async () => {
     if (session?.user?.id) {
@@ -298,11 +305,24 @@ function App() {
           const params = new URLSearchParams(new URL(redirectedTo).hash.substring(1));
           const idToken = params.get('id_token');
           if (!idToken) { setError("Sign-in failed: ID token not found."); setIsLoading(false); return; }
-          const { error: supabaseError } = await supabase.auth.signInWithIdToken({ provider: 'google', token: idToken });
+          const { data: signInData, error: supabaseError } = await supabase.auth.signInWithIdToken({ provider: 'google', token: idToken });
           if (supabaseError) throw supabaseError;
-        } catch (e) { setError(`Sign-in failed: ${e.message}`); setIsLoading(false); }
+
+          // Successfully signed in with Supabase
+          if (signInData.session && !hasShownWelcomeModalThisSession) {
+            setIsWelcomeModalOpen(true);
+            setHasShownWelcomeModalThisSession(true);
+          }
+          // setIsLoading(false) will be handled by onAuthStateChange or finally block if added
+        } catch (e) { 
+          setError(`Sign-in failed: ${e.message}`); 
+          setIsLoading(false); // Ensure loading is false on catch
+        }
       });
-    } catch (e) { setError(`Sign-in failed: ${e.message}`); setIsLoading(false); }
+    } catch (e) { 
+      setError(`Sign-in failed: ${e.message}`); 
+      setIsLoading(false); // Ensure loading is false on catch
+    }
   };
 
   const handleInputChange = (event) => setInputValue(event.target.value);
@@ -980,6 +1000,45 @@ function App() {
         </DialogActions>
       </Dialog>
 
+      {/* Welcome/Beta Notice Modal */}
+      <Dialog 
+        open={isWelcomeModalOpen} 
+        onClose={() => setIsWelcomeModalOpen(false)}
+        PaperProps={{ sx: { borderRadius: 3, p: 1, minWidth: '320px' } }} // Added minWidth for better layout
+      >
+        <DialogTitle sx={{ fontSize: '1.15rem', fontWeight: 500, pb: 1 }}>
+          {"Welcome to Magix! (Beta Notice)"}
+        </DialogTitle>
+        <DialogContent sx={{ pt: 0 }}> {/* Adjusted padding */}
+          <DialogContentText component="div" sx={{ fontSize: '0.9rem', color: 'text.secondary' }}>
+            Thanks for trying Magix! We're currently in an early beta stage, so you might occasionally encounter unexpected behavior. Your feedback is invaluable!
+            <br /><br />
+            <Typography variant="subtitle2" component="strong" sx={{ display: 'block', mb: 0.5, fontSize: '0.95rem', color: 'text.primary' }}>
+              Quick Tips for Best Results:
+            </Typography>
+            <List dense sx={{ p:0, '& .MuiListItem-root': {p:0, mb: 0.5, alignItems: 'flex-start'}, '& .MuiListItemText-primary': { fontSize: '0.875rem' } }}>
+              <ListItem>
+                <ListItemText 
+                  primary={<>&#8226; <strong>Stay on Target:</strong> Please keep the browser tab you're modifying active while Magix is working. Switching tabs mid-process might prevent changes from applying correctly.</>} 
+                />
+              </ListItem>
+              <ListItem>
+                <ListItemText 
+                  primary={<>&#8226; <strong>Device Specific:</strong> Modifications are applied to your current browser and are not synced across different devices or browsers at this time.</>} 
+                />
+              </ListItem>
+            </List>
+            <Typography variant="body2" sx={{ mt: 1.5, fontSize: '0.875rem' }}>
+              We're working hard to improve Magix every day!
+            </Typography>
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions sx={{ p: 2, pt: 1 }}>
+          <Button onClick={() => setIsWelcomeModalOpen(false)} variant="contained" autoFocus size="small">
+            Okay, Got It!
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {error && (
         <Typography color="error" sx={{ mt: 2, textAlign: 'center', p: 2 }}>
