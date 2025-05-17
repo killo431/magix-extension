@@ -63,10 +63,10 @@ function a11yProps(index) {
 
 // Placeholder suggestions for animation
 const placeholderSuggestions = [
-  "Hide the promotions tab in gmail",
-  "Remove the shorts section in youtube",
-  "Make twitter dark mode",
-  "Increase font size on wikipedia",
+  "Add a stopwatch on X",
+  "Turn all fonts into comic sans",
+  "Place a text to speech button on this blog",
+  "Change the theme of this website to cyberpunk vibes",
 ];
 
 
@@ -102,39 +102,32 @@ function App() {
 
   const [userProfile, setUserProfile] = useState(null);
   const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState(false); 
-  const [isWelcomeModalOpen, setIsWelcomeModalOpen] = useState(false);
-  const [hasShownWelcomeModalThisSession, setHasShownWelcomeModalThisSession] = useState(false);
 
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       // console.log("Initial session:", session);
-      // if (session && !hasShownWelcomeModalThisSession) { // Check on initial load too
-      //   setIsWelcomeModalOpen(true);
-      //   setHasShownWelcomeModalThisSession(true);
-      // }
     });
     const { data: authListener } = supabase.auth.onAuthStateChange(
-      (_event, session) => { // _event can be used for logging if needed, but not for triggering this modal
+      (_event, session) => {
         setSession(session);
-        setIsLoading(false); 
-        setError(null);     
-        
-        if (!session) { // On SIGNED_OUT or if session becomes null
+        // console.log("Auth state changed:", _event, session);
+        setIsLoading(false);
+        setError(null);
+        if (!session) {
           setCurrentView('home');
           setMessages([]);
           setCurrentChatId(null);
           setCurrentScriptContentForChat('');
           setCurrentChatTitle('');
-          setHasShownWelcomeModalThisSession(false); // Reset for next login session
         }
       }
     );
     return () => {
       authListener?.subscription.unsubscribe();
     };
-  }, [hasShownWelcomeModalThisSession]); // Add hasShownWelcomeModalThisSession to dependency array
+  }, []);
 
   const fetchUserScripts = async () => {
     if (session?.user?.id) {
@@ -161,24 +154,32 @@ function App() {
 
   useEffect(() => {
     fetchUserScripts();
-    const fetchUserProfile = async () => {
+    const fetchUserProfileAndName = async () => {
       if (session?.user?.id) {
-        const { data, error: profileError } = await supabase
+        // Fetch user profile from user_profiles table
+        const { data: profileData, error: profileError } = await supabase
           .from('user_profiles')
           .select('*')
           .eq('id', session.user.id)
           .single();
         if (profileError) {
           console.error("Error fetching user profile", profileError);
-          // setError("Could not load your profile information."); // Optional: set user-facing error
         } else {
-          setUserProfile(data);
+          setUserProfile(profileData);
+        }
+
+        // Set user name from session metadata or email
+        if (session.user.user_metadata?.full_name) {
+          setUserName(session.user.user_metadata.full_name);
+        } else if (session.user.email) {
+          setUserName(session.user.email.split('@')[0]); // Fallback to part of email
         }
       } else {
         setUserProfile(null);
+        setUserName(''); // Clear name if no session
       }
     };
-    fetchUserProfile();
+    fetchUserProfileAndName();
   }, [session]);
 
   // Effect to load chat data when currentChatId changes
@@ -281,7 +282,42 @@ function App() {
   const openAccountMenu = Boolean(accountMenuAnchorEl);
   const accountMenuId = openAccountMenu ? 'account-popover' : undefined;
   const handleSettingsTabChange = (event, newValue) => setSettingsTab(newValue);
-  const handleNameUpdate = () => { /* console.log("Update name clicked:", userName); */ }
+
+  const handleNameUpdate = async () => {
+    if (!session?.user) {
+      setError("You must be logged in to update your name.");
+      return;
+    }
+    const trimmedName = userName.trim();
+    if (!trimmedName) {
+      setError("Name cannot be empty.");
+      return;
+    }
+    setIsLoading(true);
+    setError(null);
+    try {
+      const { data, error: updateError } = await supabase.auth.updateUser({
+        data: { full_name: trimmedName } 
+      });
+
+      if (updateError) throw updateError;
+
+      // console.log("Name updated successfully:", data.user);
+      // Update local session state to reflect the change immediately in the UI if needed
+      if (data.user) {
+        setSession(prevSession => ({
+          ...prevSession,
+          user: data.user
+        }));
+        // Optionally, show a success message (e.g., using a snackbar or temporary state)
+      }
+    } catch (e) {
+      console.error("Error updating name:", e);
+      setError(`Failed to update name: ${e.message}`);
+    } finally {
+      setIsLoading(false);
+    }
+  };
   const handleDeleteAccount = () => { /* console.log("Delete account clicked"); */ }
 
   const handleSignIn = async () => {
@@ -305,24 +341,11 @@ function App() {
           const params = new URLSearchParams(new URL(redirectedTo).hash.substring(1));
           const idToken = params.get('id_token');
           if (!idToken) { setError("Sign-in failed: ID token not found."); setIsLoading(false); return; }
-          const { data: signInData, error: supabaseError } = await supabase.auth.signInWithIdToken({ provider: 'google', token: idToken });
+          const { error: supabaseError } = await supabase.auth.signInWithIdToken({ provider: 'google', token: idToken });
           if (supabaseError) throw supabaseError;
-
-          // Successfully signed in with Supabase
-          if (signInData.session && !hasShownWelcomeModalThisSession) {
-            setIsWelcomeModalOpen(true);
-            setHasShownWelcomeModalThisSession(true);
-          }
-          // setIsLoading(false) will be handled by onAuthStateChange or finally block if added
-        } catch (e) { 
-          setError(`Sign-in failed: ${e.message}`); 
-          setIsLoading(false); // Ensure loading is false on catch
-        }
+        } catch (e) { setError(`Sign-in failed: ${e.message}`); setIsLoading(false); }
       });
-    } catch (e) { 
-      setError(`Sign-in failed: ${e.message}`); 
-      setIsLoading(false); // Ensure loading is false on catch
-    }
+    } catch (e) { setError(`Sign-in failed: ${e.message}`); setIsLoading(false); }
   };
 
   const handleInputChange = (event) => setInputValue(event.target.value);
@@ -358,7 +381,7 @@ function App() {
 
         let profileNeedsUpdateForReset = false;
         if (currentYearUTC > lastRequestYearUTC || (currentYearUTC === lastRequestYearUTC && currentMonthUTC > lastRequestMonthUTC)) {
-          // console.log("Monthly quota reset for user:", userId); // Removed for production
+          console.log("Monthly quota reset for user:", userId);
           currentRequestCount = 10; // Reset count
           profileNeedsUpdateForReset = true; 
         }
@@ -525,7 +548,7 @@ function App() {
             .eq('id', userId);
           if (decrementError) throw decrementError;
           setUserProfile(prev => ({ ...prev, request_count: newCount, last_request_at: new Date().toISOString() }));
-          // console.log(`Request count decremented for user ${userId}. New count: ${newCount}`); // Removed for production
+          console.log(`Request count decremented for user ${userId}. New count: ${newCount}`);
         } catch (e) {
           console.error("Error decrementing request count:", e);
           // Non-critical for the current interaction, but log it.
@@ -742,7 +765,7 @@ function App() {
 
   const renderHomeScreen = () => (
     <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', flexGrow: 1, overflowY: 'auto' }}>
-      <Typography variant="h6" component="h1" sx={{ textAlign: 'center', mb: 2, fontSize: '1.05rem', fontWeight: 600 }}>Modify any website 🪄</Typography>
+      <Typography variant="h6" component="h1" sx={{ textAlign: 'center', mb: 2, fontSize: '1rem', fontWeight: 600 }}>Magix any website 🪄</Typography>
       {renderHomeInputArea()}
       {session && (
         <Box sx={{ mt: 2 }}>
@@ -817,16 +840,17 @@ function App() {
             <Button variant="contained" size="small" onClick={handleNameUpdate} disableElevation sx={{ textTransform: 'none', borderRadius: 2, bgcolor: 'common.black', '&:hover': { bgcolor: 'grey.800' } }}>Update</Button>
          </Box>
          <TextField label="Email" variant="outlined" size="small" disabled value={session?.user?.email || ''} fullWidth InputProps={{ sx: { fontSize: '0.9rem' } }} sx={{ mb: 3, '& .MuiOutlinedInput-root': { borderRadius: 2 } }} />
-         <Divider sx={{ my: 2 }} />
-         <Box sx={{ mt: 2 }}>
+         {/* <Divider sx={{ my: 2 }} /> */}
+         {/* Danger Zone Removed */}
+         {/* <Box sx={{ mt: 2 }}>
             <Typography variant="subtitle2" color="error" sx={{ mb: 1, fontWeight: 500 }}>Danger Zone</Typography>
             <Button variant="outlined" color="error" size="small" onClick={handleDeleteAccount} disableElevation sx={{ textTransform: 'none', borderRadius: 2 }}>Delete Account</Button>
-         </Box>
+         </Box> */}
          <Divider sx={{ my: 3 }} />
-         <Box sx={{ display: 'flex', justifyContent: 'center', gap: 2, flexWrap: 'wrap' }}>
+         <Box sx={{ display: 'flex', justifyContent: 'center', gap: 2, flexWrap: 'wrap', mt: 2 /* Added margin top after removing danger zone */ }}>
             <Link href="https://trymagix.com/privacy" target="_blank" rel="noopener noreferrer" underline="hover" variant="caption" color="text.secondary">Privacy Policy</Link>
             <Link href="https://trymagix.com/terms" target="_blank" rel="noopener noreferrer" underline="hover" variant="caption" color="text.secondary">Terms of Service</Link>
-            <Link href="https://trymagix.com/contact" target="_blank" rel="noopener noreferrer" underline="hover" variant="caption" color="text.secondary">Contact Us</Link>
+            <Link href="https://tally.so/r/mVyQYl" target="_blank" rel="noopener noreferrer" underline="hover" variant="caption" color="text.secondary">Contact Us</Link>
          </Box>
         </Box>
        </TabPanel>
@@ -875,7 +899,7 @@ function App() {
                disableElevation 
                color="success"
                sx={{ textTransform: 'none', borderRadius: 2 }}
-               onClick={() => window.open('YOUR_LEMON_SQUEEZY_PRO_CHECKOUT_URL', '_blank')} // TODO: Replace with actual Lemon Squeezy URL
+               onClick={() => window.open(`https://trymagix.lemonsqueezy.com/buy/18a60869-3b1a-4e71-a0f9-6ecd15b3b6d5?checkout[email]=${session?.user?.email}`, '_blank')}
              >
                Upgrade to Pro
              </Button>
@@ -932,47 +956,70 @@ function App() {
        : renderHomeScreen()}
 
       {/* Upgrade Modal */}
-      <Dialog open={isUpgradeModalOpen} onClose={() => setIsUpgradeModalOpen(false)}>
-        <DialogTitle>{"Unlock Unlimited Magix"}</DialogTitle>
-        <DialogContent>
-          <DialogContentText sx={{ mb: 2 }}>
+      <Dialog 
+        open={isUpgradeModalOpen} 
+        onClose={() => setIsUpgradeModalOpen(false)}
+        PaperProps={{ 
+          sx: { 
+            borderRadius: 4, // More pronounced rounding
+            p: 2, // Overall padding for the Paper
+            minWidth: '300px', // Ensure it's not too narrow
+            maxWidth: '380px', // Prevent it from being too wide
+          } 
+        }}
+      >
+        <DialogTitle sx={{ textAlign: 'center', fontSize: '1.25rem', fontWeight: 'medium', pb: 1 }}>
+          {"Unlock Unlimited Magix"}
+        </DialogTitle>
+        <DialogContent sx={{ textAlign: 'center', pt: 0 }}> {/* Center align content */}
+          <DialogContentText sx={{ mb: 2.5, fontSize: '0.9rem', color: 'text.secondary' }}>
             You've used all your 10 free requests for this month.
           </DialogContentText>
-          <Typography variant="body2" sx={{ mb: 1 }}>
-            Upgrade to **Magix Pro** for:
+          <Typography variant="subtitle1" sx={{ mb: 1.5, fontSize: '1rem', fontWeight: 'medium', color: 'text.primary' }}>
+            Upgrade to Magix Pro for:
           </Typography>
-          <List dense sx={{mb: 2, '& .MuiListItemIcon-root': {minWidth: '30px'} }}>
+          <List dense sx={{ mb: 2.5, width: 'fit-content', margin: '0 auto', textAlign: 'left', // Center the list block
+            '& .MuiListItemIcon-root': { minWidth: '28px', fontSize: '1.1rem' }, // Smaller icons
+            '& .MuiListItemText-primary': { fontSize: '0.875rem' } // Smaller feature text
+          }}>
             <ListItem disableGutters>
               <ListItemIcon>✅</ListItemIcon>
               <ListItemText primary="Unlimited website modifications" />
             </ListItem>
             <ListItem disableGutters>
               <ListItemIcon>🚀</ListItemIcon>
-              <ListItemText primary="Access to all current & future Pro features" />
+              <ListItemText primary="Access to all Pro features" />
             </ListItem>
             <ListItem disableGutters>
-              <ListItemIcon>❤️</ListItemIcon>
-              <ListItemText primary="Support independent development" />
+              <ListItemIcon>🔮</ListItemIcon>
+              <ListItemText primary="Sneak peeks of upcoming features" />
             </ListItem>
           </List>
-          <DialogContentText variant="caption">
+          <DialogContentText variant="caption" sx={{ fontSize: '0.75rem' }}>
             Your quota will reset on the 1st of next month.
           </DialogContentText>
         </DialogContent>
-        <DialogActions sx={{ p: 2, justifyContent: 'space-between' }}>
-          <Button onClick={() => setIsUpgradeModalOpen(false)} color="inherit">
-            Maybe Later
-          </Button>
+        <DialogActions sx={{ p: 2, pt: 1, flexDirection: 'column', gap: 1.5 }}> {/* Stack buttons and add gap */}
           <Button 
             onClick={() => {
-              window.open('YOUR_LEMON_SQUEEZY_PRO_CHECKOUT_URL', '_blank'); // TODO: Replace!
+              window.open(`https://trymagix.lemonsqueezy.com/buy/18a60869-3b1a-4e71-a0f9-6ecd15b3b6d5?checkout[email]=${session?.user?.email}`, '_blank');
               setIsUpgradeModalOpen(false);
             }} 
             variant="contained" 
             color="success"
-            autoFocus
+            size="large" // Make main CTA prominent
+            fullWidth // Make button full width
+            sx={{ borderRadius: 2, py: 1.25, fontSize: '0.95rem' }}
           >
             Upgrade to Pro
+          </Button>
+          <Button 
+            onClick={() => setIsUpgradeModalOpen(false)} 
+            color="inherit" 
+            size="small" // Smaller secondary action
+            sx={{ fontSize: '0.8rem', textTransform: 'none' }}
+          >
+            Maybe Later
           </Button>
         </DialogActions>
       </Dialog>
@@ -1000,45 +1047,6 @@ function App() {
         </DialogActions>
       </Dialog>
 
-      {/* Welcome/Beta Notice Modal */}
-      <Dialog 
-        open={isWelcomeModalOpen} 
-        onClose={() => setIsWelcomeModalOpen(false)}
-        PaperProps={{ sx: { borderRadius: 3, p: 1, minWidth: '320px' } }} // Added minWidth for better layout
-      >
-        <DialogTitle sx={{ fontSize: '1.15rem', fontWeight: 500, pb: 1 }}>
-          {"Welcome to Magix! (Beta Notice)"}
-        </DialogTitle>
-        <DialogContent sx={{ pt: 0 }}> {/* Adjusted padding */}
-          <DialogContentText component="div" sx={{ fontSize: '0.9rem', color: 'text.secondary' }}>
-            Thanks for trying Magix! We're currently in an early beta stage, so you might occasionally encounter unexpected behavior. Your feedback is invaluable!
-            <br /><br />
-            <Typography variant="subtitle2" component="strong" sx={{ display: 'block', mb: 0.5, fontSize: '0.95rem', color: 'text.primary' }}>
-              Quick Tips for Best Results:
-            </Typography>
-            <List dense sx={{ p:0, '& .MuiListItem-root': {p:0, mb: 0.5, alignItems: 'flex-start'}, '& .MuiListItemText-primary': { fontSize: '0.875rem' } }}>
-              <ListItem>
-                <ListItemText 
-                  primary={<>&#8226; <strong>Stay on Target:</strong> Please keep the browser tab you're modifying active while Magix is working. Switching tabs mid-process might prevent changes from applying correctly.</>} 
-                />
-              </ListItem>
-              <ListItem>
-                <ListItemText 
-                  primary={<>&#8226; <strong>Device Specific:</strong> Modifications are applied to your current browser and are not synced across different devices or browsers at this time.</>} 
-                />
-              </ListItem>
-            </List>
-            <Typography variant="body2" sx={{ mt: 1.5, fontSize: '0.875rem' }}>
-              We're working hard to improve Magix every day!
-            </Typography>
-          </DialogContentText>
-        </DialogContent>
-        <DialogActions sx={{ p: 2, pt: 1 }}>
-          <Button onClick={() => setIsWelcomeModalOpen(false)} variant="contained" autoFocus size="small">
-            Okay, Got It!
-          </Button>
-        </DialogActions>
-      </Dialog>
 
       {error && (
         <Typography color="error" sx={{ mt: 2, textAlign: 'center', p: 2 }}>

@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Magix",
-  "version": "0.1.0",
-  "description": "Reshape the Web Through Conversation.",
+  "version": "0.1.1",
+  "description": "Add any feature to any website.",
   "permissions": [
     "activeTab",
     "scripting",

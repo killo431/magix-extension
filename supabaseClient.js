@@ -25,4 +25,4 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   // },
 });
 
-// console.log('Supabase client initialized (check warnings if using placeholders).');
+console.log('Supabase client initialized (check warnings if using placeholders).');
