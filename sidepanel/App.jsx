@@ -17,6 +17,7 @@ import Paper from '@mui/material/Paper';
 import CircularProgress from '@mui/material/CircularProgress';
 import Popover from '@mui/material/Popover';
 import ListItemButton from '@mui/material/ListItemButton';
+import ListItemIcon from '@mui/material/ListItemIcon'; // Added for modal list icons
 import Tabs from '@mui/material/Tabs'; // For settings screen
 import Tab from '@mui/material/Tab';   // For settings screen
 import Button from '@mui/material/Button';
@@ -99,6 +100,9 @@ function App() {
   const [scriptPendingDeletion, setScriptPendingDeletion] = useState(null);
   const triggerRef = useRef(null); // Ref to store the element that triggered the dialog
 
+  const [userProfile, setUserProfile] = useState(null);
+  const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState(false); 
+
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -150,6 +154,24 @@ function App() {
 
   useEffect(() => {
     fetchUserScripts();
+    const fetchUserProfile = async () => {
+      if (session?.user?.id) {
+        const { data, error: profileError } = await supabase
+          .from('user_profiles')
+          .select('*')
+          .eq('id', session.user.id)
+          .single();
+        if (profileError) {
+          console.error("Error fetching user profile", profileError);
+          // setError("Could not load your profile information."); // Optional: set user-facing error
+        } else {
+          setUserProfile(data);
+        }
+      } else {
+        setUserProfile(null);
+      }
+    };
+    fetchUserProfile();
   }, [session]);
 
   // Effect to load chat data when currentChatId changes
@@ -301,8 +323,49 @@ function App() {
 
     try {
       if (!userId) {
-        handleSignIn(); return;
+        handleSignIn(); setIsLoading(false); return;
       }
+
+      // --- Monthly Quota Check and Reset ---
+      if (userProfile && !userProfile.is_pro) {
+        let currentRequestCount = userProfile.request_count;
+        const lastRequestDate = new Date(userProfile.last_request_at);
+        const now = new Date();
+        const currentMonthUTC = now.getUTCMonth();
+        const currentYearUTC = now.getUTCFullYear();
+        const lastRequestMonthUTC = lastRequestDate.getUTCMonth();
+        const lastRequestYearUTC = lastRequestDate.getUTCFullYear();
+
+        let profileNeedsUpdateForReset = false;
+        if (currentYearUTC > lastRequestYearUTC || (currentYearUTC === lastRequestYearUTC && currentMonthUTC > lastRequestMonthUTC)) {
+          console.log("Monthly quota reset for user:", userId);
+          currentRequestCount = 10; // Reset count
+          profileNeedsUpdateForReset = true; 
+        }
+
+        if (currentRequestCount <= 0) {
+          // setError("You've reached your monthly request limit (10 requests). Please upgrade to Pro for unlimited requests or wait until next month.");
+          setIsUpgradeModalOpen(true);
+          setIsLoading(false); return;
+        }
+        
+        // If reset happened, update DB and local state before proceeding
+        if (profileNeedsUpdateForReset) {
+          try {
+            const { error: updateError } = await supabase
+              .from('user_profiles')
+              .update({ request_count: 10, last_request_at: new Date().toISOString() })
+              .eq('id', userId);
+            if (updateError) throw updateError;
+            setUserProfile(prev => ({ ...prev, request_count: 10, last_request_at: new Date().toISOString() }));
+          } catch (e) {
+            console.error("Could not reset monthly request quota:", e);
+            setError("Could not reset your monthly request quota. Please try again.");
+            setIsLoading(false); return;
+          }
+        }
+      }
+      // --- End Quota Check ---
 
       if (!activeChatId) {
         isNewChat = true;
@@ -422,6 +485,33 @@ function App() {
           setMessages(p => p.filter(m => m.id !== procId));
         }
       }
+
+      // Decrement request count for non-pro user after successful interaction (defined as at least analysis call made)
+      if (userProfile && !userProfile.is_pro) {
+        try {
+          // Ensure we use the latest count if it was just reset
+          const countToDecrementFrom = userProfile.request_count === 10 && (new Date().getUTCMonth() !== new Date(userProfile.last_request_at).getUTCMonth() || new Date().getUTCFullYear() !== new Date(userProfile.last_request_at).getUTCFullYear()) 
+                                      ? 10 // If reset just happened (or would have), decrement from 10
+                                      : userProfile.request_count; // Otherwise, use current count
+
+          const newCount = Math.max(0, countToDecrementFrom - 1);
+
+          const { error: decrementError } = await supabase
+            .from('user_profiles')
+            .update({ 
+                request_count: newCount,
+                last_request_at: new Date().toISOString() 
+            })
+            .eq('id', userId);
+          if (decrementError) throw decrementError;
+          setUserProfile(prev => ({ ...prev, request_count: newCount, last_request_at: new Date().toISOString() }));
+          console.log(`Request count decremented for user ${userId}. New count: ${newCount}`);
+        } catch (e) {
+          console.error("Error decrementing request count:", e);
+          // Non-critical for the current interaction, but log it.
+        }
+      }
+
     } catch (e) {
       setError(`Error: ${e.message}`);
       setMessages(p => [...p, {id: `err-${Date.now()}`, sender:'magix', text: `Error: ${e.message}`, chat_id: activeChatId || 'unknown'}]);
@@ -722,10 +812,54 @@ function App() {
        </TabPanel>
        <TabPanel value={settingsTab} index={1}>
          <Box sx={{ pt: 3, px: 1 }}>
-           <Chip label="Pro User" size="small" sx={{ mb: 2, bgcolor: 'common.black', color: 'common.white' }} />
-           <Typography variant="body2" sx={{ mb: 1 }}>Monthly Limits: 1/10 messages used.</Typography>
-           <LinearProgress variant="determinate" value={10} color={10 >= 80 ? 'error' : 10 >= 50 ? 'warning' : 'success'} sx={{ mb: 2, height: 8, borderRadius: 1 }} />
-           <Button variant="contained" size="small" disableElevation sx={{ textTransform: 'none', borderRadius: 2, bgcolor: 'common.black', '&:hover': { bgcolor: 'grey.800' } }}>Manage Billing (Dummy)</Button>
+           {userProfile?.is_pro ? (
+             <Chip label="Pro User" size="small" sx={{ mb: 2, bgcolor: 'success.main', color: 'common.white', fontWeight: 500 }} />
+           ) : (
+             <Chip label="Free Tier" size="small" sx={{ mb: 2 }} />
+           )}
+
+           {userProfile?.is_pro ? (
+             <Typography variant="body2" sx={{ mb: 1 }}>You have unlimited requests!</Typography>
+           ) : (
+             <>
+               <Typography variant="body2" sx={{ mb: 1 }}>
+                 Monthly Requests: {userProfile?.request_count !== undefined ? `${10 - (userProfile.request_count || 0)} / 10 used` : 'Loading...'}
+               </Typography>
+               <LinearProgress 
+                 variant="determinate" 
+                 value={userProfile?.request_count !== undefined ? ((10 - (userProfile.request_count || 0)) / 10) * 100 : 0} 
+                 color={userProfile?.request_count !== undefined && (10 - userProfile.request_count) >= 8 ? 'error' : (10 - userProfile.request_count) >= 5 ? 'warning' : 'success'} 
+                 sx={{ mb: 2, height: 8, borderRadius: 1 }} 
+               />
+               <Typography variant="caption" display="block" sx={{ mb: 2, color: 'text.secondary' }}>
+                 Your free requests will reset on the 1st of next month (UTC).
+               </Typography>
+             </>
+           )}
+          
+           {userProfile?.is_pro ? (
+             <Button 
+               variant="contained" 
+               size="small" 
+               disableElevation 
+               sx={{ textTransform: 'none', borderRadius: 2, bgcolor: 'common.black', '&:hover': { bgcolor: 'grey.800' } }}
+               onClick={() => userProfile.customer_portal_url && window.open(userProfile.customer_portal_url, '_blank')}
+               disabled={!userProfile.customer_portal_url}
+             >
+               Manage Billing
+             </Button>
+           ) : (
+             <Button 
+               variant="contained" 
+               size="small" 
+               disableElevation 
+               color="success"
+               sx={{ textTransform: 'none', borderRadius: 2 }}
+               onClick={() => window.open('YOUR_LEMON_SQUEEZY_PRO_CHECKOUT_URL', '_blank')} // TODO: Replace with actual Lemon Squeezy URL
+             >
+               Upgrade to Pro
+             </Button>
+           )}
         </Box>
        </TabPanel>
     </Box>
@@ -740,7 +874,17 @@ function App() {
       )}
        <Popover id={accountMenuId} open={openAccountMenu} anchorEl={accountMenuAnchorEl} onClose={handleAccountMenuClose} anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }} transformOrigin={{ vertical: 'top', horizontal: 'left'}} slotProps={{ paper: { sx: { width: '200px', mt: 1, borderRadius: 2 } } }} >
           <List dense>
-            <ListItem><ListItemText primary="Monthly messages:" secondary="0/10" /></ListItem>
+            <ListItem>
+              <ListItemText 
+                primary="Monthly Requests:" 
+                secondary={
+                  userProfile ? (
+                    userProfile.is_pro ? "Unlimited" : 
+                    (userProfile.request_count !== undefined ? `${10 - userProfile.request_count} / 10 used` : "Loading...")
+                  ) : "Loading..."
+                } 
+              />
+            </ListItem>
             {currentView === 'chat' ? (
               <ListItemButton onClick={() => { setCurrentView('home'); setCurrentChatId(null); setMessages([]); setCurrentScriptContentForChat(''); setCurrentChatTitle(''); handleAccountMenuClose(); }}>
                 <ListItemText primary="Go to dashboard" />
@@ -766,6 +910,52 @@ function App() {
       {currentView === 'chat' ? renderChatScreen()
        : currentView === 'settings' ? renderAccountSettingsScreen()
        : renderHomeScreen()}
+
+      {/* Upgrade Modal */}
+      <Dialog open={isUpgradeModalOpen} onClose={() => setIsUpgradeModalOpen(false)}>
+        <DialogTitle>{"Unlock Unlimited Magix"}</DialogTitle>
+        <DialogContent>
+          <DialogContentText sx={{ mb: 2 }}>
+            You've used all your 10 free requests for this month.
+          </DialogContentText>
+          <Typography variant="body2" sx={{ mb: 1 }}>
+            Upgrade to **Magix Pro** for:
+          </Typography>
+          <List dense sx={{mb: 2, '& .MuiListItemIcon-root': {minWidth: '30px'} }}>
+            <ListItem disableGutters>
+              <ListItemIcon>✅</ListItemIcon>
+              <ListItemText primary="Unlimited website modifications" />
+            </ListItem>
+            <ListItem disableGutters>
+              <ListItemIcon>🚀</ListItemIcon>
+              <ListItemText primary="Access to all current & future Pro features" />
+            </ListItem>
+            <ListItem disableGutters>
+              <ListItemIcon>❤️</ListItemIcon>
+              <ListItemText primary="Support independent development" />
+            </ListItem>
+          </List>
+          <DialogContentText variant="caption">
+            Your quota will reset on the 1st of next month.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions sx={{ p: 2, justifyContent: 'space-between' }}>
+          <Button onClick={() => setIsUpgradeModalOpen(false)} color="inherit">
+            Maybe Later
+          </Button>
+          <Button 
+            onClick={() => {
+              window.open('YOUR_LEMON_SQUEEZY_PRO_CHECKOUT_URL', '_blank'); // TODO: Replace!
+              setIsUpgradeModalOpen(false);
+            }} 
+            variant="contained" 
+            color="success"
+            autoFocus
+          >
+            Upgrade to Pro
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Confirmation Dialog */}
       <Dialog
