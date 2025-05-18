@@ -489,7 +489,7 @@ function App() {
                 setMessages(prev => [...prev, { 
                   id: `ai-code-success-${Date.now()}`, 
                   sender: 'magix', 
-                  text: 'Alright, I\'ve applied the changes! Take a look and let me know what you think or if there\'s anything else.', 
+                  text: 'Alright, I\'ve applied the changes! Take a look and let me know what you think or if there\'s anything else. Please refresh the page to see the changes.', 
                   chat_id: activeChatId 
                 }]);
               }
@@ -512,7 +512,7 @@ function App() {
                   setMessages(prev => [...prev, { 
                     id: `ai-code-success-${Date.now()}`, 
                     sender: 'magix', 
-                    text: 'Alright, I\'ve applied the changes! Take a look and let me know what you think or if there\'s anything else.', 
+                    text: 'Alright, I\'ve applied the changes! Take a look and let me know what you think or if there\'s anything else. Please refresh the page to see the changes.', 
                     chat_id: activeChatId 
                   }]);
                 }
