@@ -181,6 +181,26 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true; // Indicates asynchronous response
   }
 
+  // Handle getting currently registered user scripts
+  if (message.type === 'GET_REGISTERED_SCRIPTS') {
+    (async () => { // Wrap in async IIFE to use await
+      try {
+        // Check if userScripts API is available
+        if (chrome.userScripts && chrome.userScripts.getScripts) {
+          const registeredScripts = await chrome.userScripts.getScripts();
+          // console.log(`Found ${registeredScripts.length} registered scripts`);
+          sendResponse({ success: true, scripts: registeredScripts });
+        } else {
+          console.error("chrome.userScripts.getScripts API not available.");
+          sendResponse({ success: false, error: "UserScripts API for getScripts not available." });
+        }
+      } catch (error) {
+        console.error(`Error getting registered scripts:`, error);
+        sendResponse({ success: false, error: error.message });
+      }
+    })();
+    return true; // Indicates asynchronous response
+  }
 
   // Removed injectCSS and injectJS handlers as injection is now done from sidepanel
 

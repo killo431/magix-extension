@@ -232,22 +232,110 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 // Create the Floating Button
 const fab = document.createElement('button');
-fab.textContent = 'Modify 🪄'; // Updated text
-fab.style.position = 'fixed';
-fab.style.bottom = '20px';
-fab.style.right = '20px';
-// Removed fixed width/height for auto sizing
-fab.style.borderRadius = '8px'; // Corner rounding like recent items
-fab.style.backgroundColor = '#ffffff'; // White background
-fab.style.color = '#000000'; // Black text
-fab.style.fontSize = '14px'; // Adjusted font size
-fab.style.border = '1px solid #e0e0e0'; // Light grey border
-fab.style.padding = '6px 12px'; // Added padding
-fab.style.cursor = 'pointer';
-fab.style.zIndex = '9999';
-fab.style.boxShadow = '0 2px 4px rgba(0,0,0,0.1)'; // Subtle shadow
-fab.style.fontFamily = 'Inter, sans-serif'; // Match sidepanel font
+fab.textContent = 'Magix 🪄'; // Updated text to "Magix"
+fab.style.cssText = `
+  position: fixed !important;
+  bottom: 20px !important;
+  right: 20px !important;
+  border-radius: 8px !important;
+  background-color: #ffffff !important;
+  color: #000000 !important;
+  font-size: 14px !important;
+  border: 1px solid #e0e0e0 !important;
+  padding: 6px 12px !important;
+  cursor: pointer !important;
+  z-index: 999999 !important;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;
+  font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+  font-weight: 500 !important;
+  line-height: 1.2 !important;
+  text-align: center !important;
+  white-space: nowrap !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
+  -moz-user-select: none !important;
+  -ms-user-select: none !important;
+  transition: none !important;
+  transform: none !important;
+  filter: none !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  display: block !important;
+  width: auto !important;
+  height: auto !important;
+  min-width: auto !important;
+  min-height: auto !important;
+  max-width: none !important;
+  max-height: none !important;
+  margin: 0 !important;
+  outline: none !important;
+  text-decoration: none !important;
+  text-transform: none !important;
+  letter-spacing: normal !important;
+  word-spacing: normal !important;
+`;
 fab.id = 'magix-fab';
+
+// Function to maintain FAB integrity - prevents tampering by user scripts
+function maintainFABIntegrity() {
+  if (fab && fab.parentNode) {
+    // Reset text content if changed
+    if (fab.textContent !== 'Magix 🪄') {
+      fab.textContent = 'Magix 🪄';
+    }
+    
+    // Reset critical styles if changed
+    const computedStyle = window.getComputedStyle(fab);
+    if (computedStyle.backgroundColor !== 'rgb(255, 255, 255)' || 
+        computedStyle.color !== 'rgb(0, 0, 0)' ||
+        computedStyle.position !== 'fixed') {
+      fab.style.cssText = `
+        position: fixed !important;
+        bottom: 20px !important;
+        right: 20px !important;
+        border-radius: 8px !important;
+        background-color: #ffffff !important;
+        color: #000000 !important;
+        font-size: 14px !important;
+        border: 1px solid #e0e0e0 !important;
+        padding: 6px 12px !important;
+        cursor: pointer !important;
+        z-index: 999999 !important;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;
+        font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+        font-weight: 500 !important;
+        line-height: 1.2 !important;
+        text-align: center !important;
+        white-space: nowrap !important;
+        user-select: none !important;
+        -webkit-user-select: none !important;
+        -moz-user-select: none !important;
+        -ms-user-select: none !important;
+        transition: none !important;
+        transform: none !important;
+        filter: none !important;
+        opacity: 1 !important;
+        visibility: visible !important;
+        display: block !important;
+        width: auto !important;
+        height: auto !important;
+        min-width: auto !important;
+        min-height: auto !important;
+        max-width: none !important;
+        max-height: none !important;
+        margin: 0 !important;
+        outline: none !important;
+        text-decoration: none !important;
+        text-transform: none !important;
+        letter-spacing: normal !important;
+        word-spacing: normal !important;
+      `;
+    }
+  }
+}
+
+// Start periodic integrity checks
+setInterval(maintainFABIntegrity, 1000); // Check every second
 
 // Add event listener to send a message to the background script to open the side panel
 fab.addEventListener('click', () => {

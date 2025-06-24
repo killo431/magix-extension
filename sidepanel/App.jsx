@@ -7,7 +7,6 @@ import IconButton from '@mui/material/IconButton';
 import List from '@mui/material/List';
 // import ListItem from '@mui/material/ListItem'; // Replaced by ListItemButton for script list
 import ListItemText from '@mui/material/ListItemText';
-import Switch from '@mui/material/Switch';
 import AccountCircleIcon from '@mui/icons-material/AccountCircle'; // Profile icon
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward'; // Submit icon
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'; // Back icon
@@ -83,6 +82,7 @@ function App() {
   const [settingsTab, setSettingsTab] = useState(0);
   const [userName, setUserName] = useState('');
   const [userScripts, setUserScripts] = useState([]);
+  const [activeScripts, setActiveScripts] = useState([]); // Scripts currently registered in browser
   const [isSelectingElement, setIsSelectingElement] = useState(false);
   const [selectedElementPath, setSelectedElementPath] = useState('');
 
@@ -152,8 +152,38 @@ function App() {
     }
   };
 
+  const fetchActiveScripts = async () => {
+    try {
+      chrome.runtime.sendMessage({
+        type: 'GET_REGISTERED_SCRIPTS'
+      }, (response) => {
+        if (chrome.runtime.lastError) {
+          console.warn("Could not fetch registered scripts:", chrome.runtime.lastError.message);
+          setActiveScripts([]);
+        } else if (response && response.success) {
+          // console.log("Active scripts:", response.scripts);
+          setActiveScripts(response.scripts || []);
+        } else {
+          console.warn("Failed to fetch registered scripts:", response?.error);
+          setActiveScripts([]);
+        }
+      });
+    } catch (error) {
+      console.error("Error fetching active scripts:", error);
+      setActiveScripts([]);
+    }
+  };
+
+  // Function to get only active scripts to display
+  const getDisplayedScripts = () => {
+    // Always show only scripts that are currently active/registered
+    const activeScriptIds = new Set(activeScripts.map(script => script.id));
+    return userScripts.filter(script => activeScriptIds.has(script.id));
+  };
+
   useEffect(() => {
     fetchUserScripts();
+    fetchActiveScripts(); // Also fetch currently active scripts
     const fetchUserProfileAndName = async () => {
       if (session?.user?.id) {
         // Fetch user profile from user_profiles table
@@ -486,10 +516,17 @@ function App() {
               // console.log(`CSS injected for script ${savedScriptId}`);
               // CSS doesn't need separate registration via background script currently
               if (savedScriptId) { // Ensure DB save was successful before adding success message
+                // Auto-refresh the current tab to show changes immediately
+                chrome.tabs.query({ active: true, currentWindow: true }, ([activeTab]) => {
+                  if (activeTab?.id) {
+                    chrome.tabs.reload(activeTab.id);
+                  }
+                });
+                
                 setMessages(prev => [...prev, { 
                   id: `ai-code-success-${Date.now()}`, 
                   sender: 'magix', 
-                  text: 'Alright, I\'ve applied the changes! Take a look and let me know what you think or if there\'s anything else. Please refresh the page to see the changes.', 
+                  text: 'Perfect! Your modification has been applied. Take a look and let me know what you think or if there\'s anything else you\'d like to change!', 
                   chat_id: activeChatId 
                 }]);
               }
@@ -509,10 +546,20 @@ function App() {
                   setMessages(p => [...p, {id: `err-${Date.now()}`, sender:'magix', text: `Script registration error: ${eMsg}`, chat_id: activeChatId}]);
                 } else if (res?.success) {
                   // console.log(`Script ${savedScriptId} registered successfully via background.`);
+                  // Refresh active scripts list after successful registration
+                  fetchActiveScripts();
+                  
+                  // Auto-refresh the current tab to show changes immediately
+                  chrome.tabs.query({ active: true, currentWindow: true }, ([activeTab]) => {
+                    if (activeTab?.id) {
+                      chrome.tabs.reload(activeTab.id);
+                    }
+                  });
+                  
                   setMessages(prev => [...prev, { 
                     id: `ai-code-success-${Date.now()}`, 
                     sender: 'magix', 
-                    text: 'Alright, I\'ve applied the changes! Take a look and let me know what you think or if there\'s anything else. Please refresh the page to see the changes.', 
+                    text: 'Perfect! Your modification has been applied. Take a look and let me know what you think or if there\'s anything else you\'d like to change!', 
                     chat_id: activeChatId 
                   }]);
                 }
@@ -685,59 +732,92 @@ function App() {
     }, 0);
   };
 
-  const handleConfirmDeleteScript = async () => { // Renamed and made async
-    if (!scriptPendingDeletion) {
+  const handleConfirmDeleteScript = async () => {
+    if (!scriptPendingDeletion || !session?.user?.id) {
       handleCloseConfirmDialog();
       return;
     }
 
-    const scriptToDelete = scriptPendingDeletion; // Keep a reference before clearing state
+    const scriptToDelete = scriptPendingDeletion;
+    setIsLoading(true);
+    setError(null);
 
-    // 1. Request removal of local effect
-    // console.log(`Requesting removal of local effect for script: ${scriptToDelete.id}`);
+    try {
+      // 1. First, delete from database
+      const { error: deleteError } = await supabase
+        .from('scripts')
+        .delete()
+        .eq('id', scriptToDelete.id)
+        .eq('user_id', session.user.id);
+
+      if (deleteError) {
+        throw new Error(`Failed to delete script from database: ${deleteError.message}`);
+      }
+
+      // 2. Remove script effect from browser
     chrome.runtime.sendMessage({
       type: 'REMOVE_SCRIPT_EFFECT',
       scriptId: scriptToDelete.id,
       scriptCode: scriptToDelete.code
-    }, async (response) => { // Made callback async to await DB deletion
+      }, (response) => {
        if (chrome.runtime.lastError) {
-         console.error("Error sending remove effect message:", chrome.runtime.lastError.message);
-         setError(`Error removing script effect: ${chrome.runtime.lastError.message}`);
-         // Don't proceed to DB delete if local removal fails to notify
+          console.warn("Warning: Could not remove script effect:", chrome.runtime.lastError.message);
        } else if (response && !response.success) {
-         console.error("Failed to remove script effect (response):", response.error);
-         setError(`Failed to remove script effect: ${response.error}`);
-         // Don't proceed to DB delete if local removal fails
-       } else {
-         // console.log("Script effect removal message processed successfully by background script.");
+          console.warn("Warning: Script effect removal failed:", response.error);
+        }
+      });
 
-         // 2. Delete from database
-         if (scriptToDelete?.id && session?.user?.id) {
-           // console.log(`Attempting to delete script ${scriptToDelete.id} from database.`);
-           try {
-             const { error: deleteError } = await supabase
-               .from('scripts')
-               .delete()
-               .eq('id', scriptToDelete.id)
-               .eq('user_id', session.user.id); // Ensure user owns the script
+      // 3. Update local state - remove from scripts list
+      setUserScripts(prev => prev.filter(script => script.id !== scriptToDelete.id));
+      
+      // 4. Refresh active scripts to update the UI
+      fetchActiveScripts();
 
-             if (deleteError) {
-               throw deleteError;
+      // 4. Handle chat cleanup if current chat is linked to this script
+      if (currentChatId && currentScriptContentForChat) {
+        try {
+          // Check if current chat is linked to the deleted script
+          const { data: chatData, error: chatError } = await supabase
+            .from('chats')
+            .select('script_id')
+            .eq('id', currentChatId)
+            .single();
+
+          if (!chatError && chatData?.script_id === scriptToDelete.id) {
+            // Unlink the script from the chat
+            await supabase
+              .from('chats')
+              .update({ script_id: null })
+              .eq('id', currentChatId);
+            
+            // Clear local script content
+            setCurrentScriptContentForChat('');
+          }
+        } catch (chatError) {
+          console.warn("Warning: Could not update chat linkage:", chatError.message);
              }
+      }
 
-             // console.log(`Script ${scriptToDelete.id} deleted from database.`);
-             fetchUserScripts(); // Refresh the list from DB
-             // Optionally, show a success notification/toast here
-           } catch (dbError) {
-             console.error("Error deleting script from database:", dbError);
-             setError(`Failed to delete script from database: ${dbError.message}`);
-             // UI will still close, error will be displayed.
-           }
-         }
-       }
-    });
-    // Dialog closing and focus management is now handled after both operations attempt
+      console.log(`Script ${scriptToDelete.id} deleted successfully`);
+      
+      // 5. Refresh the current tab after successful deletion
+      try {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (tab?.id) {
+          chrome.tabs.reload(tab.id);
+        }
+      } catch (refreshError) {
+        console.warn("Could not refresh tab:", refreshError.message);
+        // Don't show error to user since deletion was successful
+      }
+      
+    } catch (error) {
+      console.error("Error deleting script:", error);
+      setError(error.message || "Failed to delete script");
+    } finally {
+      setIsLoading(false);
     handleCloseConfirmDialog();
+    }
   };
 
 
@@ -750,7 +830,7 @@ function App() {
 
   const renderHomeInputArea = () => (
     <Box sx={{ display: 'flex', flexDirection: 'column', p: 1, borderRadius: 3, bgcolor: 'grey.100', border: '1px solid #e0e0e0', position: 'relative', mb: 2, pb: selectedElementPath ? '48px' : '40px' }}>
-      <Chip icon={<MyLocationIcon sx={{ fontSize: '1rem', color: (isSelectingElement || selectedElementPath) ? 'primary.main' : 'grey.500' }} />} label={isSelectingElement ? "Selecting..." : selectedElementPath ? "Selected" : "Select"} size="small" variant={(isSelectingElement || selectedElementPath) ? "filled" : "outlined"} color={(isSelectingElement || selectedElementPath) ? "primary" : "default"} clickable onClick={async () => { if (isSelectingElement) return; if (selectedElementPath) { setSelectedElementPath(''); } else { setIsSelectingElement(true); setSelectedElementPath(''); setError(null); try { const [tab] = await chrome.tabs.query({ active: true, currentWindow: true }); if (tab?.id) chrome.tabs.sendMessage(tab.id, { type: 'START_ELEMENT_SELECTION' }, r => { if (chrome.runtime.lastError) { setError(`Selection error: ${chrome.runtime.lastError.message}`); setIsSelectingElement(false); }}); else throw new Error("No active tab."); } catch (e) { setError(`Selection error: ${e.message}`); setIsSelectingElement(false); }}}} sx={{ position: 'absolute', bottom: 8, left: 8, fontSize: '0.75rem', height: '28px', borderColor: '#e0e0e0', '& .MuiChip-label': { px: '8px' }, '& .MuiChip-icon': { ml: '6px', mr: '-4px' }}} />
+      <Chip icon={<MyLocationIcon sx={{ fontSize: '1rem', color: (isSelectingElement || selectedElementPath) ? 'primary.main' : 'grey.500' }} />} label={isSelectingElement ? "Selecting..." : selectedElementPath ? "Element Selected" : "Select Element"} size="small" variant={(isSelectingElement || selectedElementPath) ? "filled" : "outlined"} color={(isSelectingElement || selectedElementPath) ? "primary" : "default"} clickable onClick={async () => { if (isSelectingElement) return; if (selectedElementPath) { setSelectedElementPath(''); } else { setIsSelectingElement(true); setSelectedElementPath(''); setError(null); try { const [tab] = await chrome.tabs.query({ active: true, currentWindow: true }); if (tab?.id) chrome.tabs.sendMessage(tab.id, { type: 'START_ELEMENT_SELECTION' }, r => { if (chrome.runtime.lastError) { setError(`Selection error: ${chrome.runtime.lastError.message}`); setIsSelectingElement(false); }}); else throw new Error("No active tab."); } catch (e) { setError(`Selection error: ${e.message}`); setIsSelectingElement(false); }}}} sx={{ position: 'absolute', bottom: 8, left: 8, fontSize: '0.75rem', height: '28px', borderColor: '#e0e0e0', '& .MuiChip-label': { px: '8px' }, '& .MuiChip-icon': { ml: '6px', mr: '-4px' }}} />
       <TextField fullWidth multiline minRows={2} maxRows={3} variant="standard" placeholder={animatedPlaceholder + '|'} value={inputValue} onChange={handleInputChange} onKeyDown={handleKeyDown} InputProps={{ disableUnderline: true, sx: { fontSize: '0.9rem' } }} sx={{ flexGrow: 1, '& .MuiInputBase-root': { py: 0.5 } }} disabled={isLoading} />
       <IconButton onClick={handleSubmit} disabled={isLoading || (!inputValue.trim() && !currentChatId) } sx={{ position: 'absolute', bottom: 8, right: 8, bgcolor: 'common.black', color: 'common.white', width: 28, height: 28, '&:hover': { bgcolor: 'grey.800' }, '&.Mui-disabled': { backgroundColor: 'grey.300', color: 'grey.500' }}}>{isLoading ? <CircularProgress size={16} sx={{ color: 'white' }}/> : <ArrowUpwardIcon sx={{ fontSize: '1rem' }} />}</IconButton>
     </Box>
@@ -763,16 +843,19 @@ function App() {
     </Box>
   );
 
-  const renderHomeScreen = () => (
-    <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', flexGrow: 1, overflowY: 'auto' }}>
-      <Typography variant="h6" component="h1" sx={{ textAlign: 'center', mb: 2, fontSize: '1rem', fontWeight: 600 }}>Magix any website 🪄</Typography>
-      {renderHomeInputArea()}
-      {session && (
-        <Box sx={{ mt: 2 }}>
-          <Typography variant="body2" sx={{ mb: 1, fontWeight: 500, color: 'text.secondary' }}>Your Modifications:</Typography>
-          <List dense sx={{ pt: 0, maxHeight: '350px', overflowY: 'auto', '&::-webkit-scrollbar': { display: 'none' }, scrollbarWidth: 'none', '-ms-overflow-style': 'none' }}>
-            {userScripts.length > 0 ? (
-              userScripts.map((script) => (
+  const renderHomeScreen = () => {
+    const displayedScripts = getDisplayedScripts();
+    
+    return (
+      <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', flexGrow: 1, overflowY: 'auto' }}>
+        <Typography variant="h6" component="h1" sx={{ textAlign: 'center', mb: 2, fontSize: '1rem', fontWeight: 600 }}>Modify any website 🪄</Typography>
+        {renderHomeInputArea()}
+        {session && (
+          <Box sx={{ mt: 2 }}>
+            <Typography variant="body2" sx={{ mb: 1, fontWeight: 500, color: 'text.secondary' }}>Active Modifications:</Typography>
+            <List dense sx={{ pt: 0, maxHeight: '350px', overflowY: 'auto', '&::-webkit-scrollbar': { display: 'none' }, scrollbarWidth: 'none', '-ms-overflow-style': 'none' }}>
+              {displayedScripts.length > 0 ? (
+                displayedScripts.map((script) => (
                 <ListItemButton key={script.id} onClick={() => handleScriptItemClick(script)} sx={{ border: '1px solid #e0e0e0', borderRadius: 2, mb: 1, py: 0.5 }}>
                   <ListItemText id={`script-list-item-${script.id}`} primary={script.title} secondary={script.domain_pattern || 'All sites'} primaryTypographyProps={{ sx: { fontSize: '0.9rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }} secondaryTypographyProps={{ sx: { fontSize: '0.8rem' } }} />
                   <IconButton
@@ -789,15 +872,14 @@ function App() {
                     <DeleteIcon sx={{ color: 'grey.500', fontSize: '1.1rem' }} />
                   </IconButton>
                 </ListItemButton>
-              )) ) : ( <Typography variant="caption" color="text.secondary" sx={{ textAlign: 'center', display: 'block', mt: 2 }}>No modifications saved yet. Create one using the input above!</Typography> )}
+              )) ) : ( <Typography variant="caption" color="text.secondary" sx={{ textAlign: 'center', display: 'block', mt: 2 }}>No active modifications. Create one using the input above!</Typography> )}
           </List>
          </Box>
        )}
-      <Typography variant="caption" color="text.secondary" sx={{ textAlign: 'center', mt: 3 }}>
-        Magix is in its early stages and may occasionally make mistakes.
-      </Typography>
+
      </Box>
    );
+  };
 
   const renderChatScreen = () => (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -1032,17 +1114,31 @@ function App() {
         aria-describedby="alert-dialog-description"
       >
         <DialogTitle id="alert-dialog-title">
-          {"Confirm Delete"}
+          {"Delete Modification"}
         </DialogTitle>
         <DialogContent>
           <DialogContentText id="alert-dialog-description">
-            Are you sure you want to permanently delete this script? This action will remove it from your list and the database, and cannot be undone. Associated chat history will remain but will no longer be linked to this script.
+            Are you sure you want to delete this modification?
+          </DialogContentText>
+          <DialogContentText sx={{ mt: 2, fontWeight: 500, color: 'warning.main' }}>
+            ⚠️ Important: To completely remove this modification, make sure you're on the website where it was originally applied ({scriptPendingDeletion?.domain_pattern || 'the target site'}) before deleting.
+          </DialogContentText>
+          <DialogContentText sx={{ mt: 1, fontSize: '0.875rem', color: 'text.secondary' }}>
+            This will permanently remove the modification from your list. Any associated chat history will remain but will no longer be linked to this modification.
           </DialogContentText>
         </DialogContent>
         <DialogActions>
-          <Button onClick={handleCloseConfirmDialog}>Cancel</Button>
-          <Button onClick={handleConfirmDeleteScript} autoFocus color="error">
-            Confirm Delete
+          <Button onClick={handleCloseConfirmDialog} disabled={isLoading}>
+            Cancel
+          </Button>
+          <Button 
+            onClick={handleConfirmDeleteScript} 
+            autoFocus 
+            color="error"
+            disabled={isLoading}
+            startIcon={isLoading ? <CircularProgress size={16} /> : null}
+          >
+            {isLoading ? 'Deleting...' : 'Delete Modification'}
           </Button>
         </DialogActions>
       </Dialog>
