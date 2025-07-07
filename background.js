@@ -21,6 +21,18 @@ chrome.runtime.onInstalled.addListener(async () => { // Make listener async
   }
 });
 
+// Recommended function to check UserScripts API availability
+function isUserScriptsAvailable() {
+  try {
+    // Method call which throws if API permission or toggle is not enabled.
+    chrome.userScripts.getScripts();
+    return true;
+  } catch {
+    // Not available.
+    return false;
+  }
+}
+
 // Function to handle USER SCRIPT registration using the database scriptId
 async function handleUserScriptRegistration(message, sender, sendResponse) {
   // Check for scriptId, targetUrl, and code in the message payload
@@ -62,10 +74,21 @@ async function handleUserScriptRegistration(message, sender, sendResponse) {
   const broadMatchPattern = getBroadMatchPattern(targetUrl);
   // console.log(`Using broad match pattern: ${broadMatchPattern}`);
 
-  // Check if the userScripts API is available
-  if (!chrome.userScripts || !chrome.userScripts.register || !chrome.userScripts.unregister) {
-    console.error("UserScripts API (register/unregister) is not available.");
-    sendResponse({ success: false, error: "UserScripts API not available." });
+  // Check if the userScripts API is available using the recommended method
+  if (!isUserScriptsAvailable()) {
+    console.error("UserScripts API is not available - user needs to enable required toggle.");
+    
+    // Provide user-friendly guidance based on Chrome version
+    let version = Number(navigator.userAgent.match(/(Chrome|Chromium)\/([0-9]+)/)?.[2]);
+    let errorMessage = "UserScripts API not available. ";
+    
+    if (version >= 138) {
+      errorMessage += "Please enable 'Allow User Scripts' toggle:\n1. Go to chrome://extensions\n2. Click 'Details' on Magix extension\n3. Enable 'Allow User Scripts' toggle";
+    } else {
+      errorMessage += "Please enable Developer Mode:\n1. Go to chrome://extensions\n2. Enable 'Developer Mode' toggle in top right";
+    }
+    
+    sendResponse({ success: false, error: errorMessage });
     return;
   }
 
@@ -134,6 +157,33 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  // Handle UserScripts availability check
+  if (message.type === 'CHECK_USER_SCRIPTS_AVAILABILITY') {
+    const isAvailable = isUserScriptsAvailable();
+    
+    if (!isAvailable) {
+      // Provide user-friendly guidance based on Chrome version
+      let version = Number(navigator.userAgent.match(/(Chrome|Chromium)\/([0-9]+)/)?.[2]);
+      let errorMessage = "UserScripts API not available. ";
+      
+      if (version >= 138) {
+        errorMessage += "Please enable 'Allow User Scripts' toggle:\n1. Go to chrome://extensions\n2. Click 'Details' on Magix extension\n3. Enable 'Allow User Scripts' toggle";
+      } else {
+        errorMessage += "Please enable Developer Mode:\n1. Go to chrome://extensions\n2. Enable 'Developer Mode' toggle in top right";
+      }
+      
+      sendResponse({ 
+        available: false, 
+        error: errorMessage,
+        guidance: errorMessage 
+      });
+    } else {
+      sendResponse({ available: true });
+    }
+    
+    return false; // Synchronous response
+  }
+
   // Handle removing script effect (JS or CSS)
   if (message.type === 'REMOVE_SCRIPT_EFFECT') {
     const { scriptId, scriptCode } = message;
@@ -149,7 +199,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       (async () => { // Wrap in async IIFE to use await
         try {
           // Check if userScripts API is available before attempting to use it
-          if (chrome.userScripts && chrome.userScripts.unregister) {
+          if (isUserScriptsAvailable()) {
              // console.log(`Attempting to unregister JS script with ID: ${scriptId}`);
              await chrome.userScripts.unregister({ ids: [scriptId] });
              // console.log(`Unregistration successful for script ID: ${scriptId} (if it was registered).`);
@@ -186,7 +236,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     (async () => { // Wrap in async IIFE to use await
       try {
         // Check if userScripts API is available
-        if (chrome.userScripts && chrome.userScripts.getScripts) {
+        if (isUserScriptsAvailable()) {
           const registeredScripts = await chrome.userScripts.getScripts();
           // console.log(`Found ${registeredScripts.length} registered scripts`);
           sendResponse({ success: true, scripts: registeredScripts });

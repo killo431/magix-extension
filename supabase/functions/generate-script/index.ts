@@ -1,15 +1,23 @@
 // Setup type definitions for built-in Supabase Runtime APIs
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { corsHeaders } from "../_shared/cors.ts"; // Assuming you might create a shared CORS file later
-// --- Claude 3.7 Configuration ---
+// Define CORS headers directly in this file
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, GET, OPTIONS, PUT, DELETE'
+};
+// --- Claude 4 Configuration ---
 const REPLICATE_API_TOKEN = Deno.env.get("REPLICATE_API_TOKEN");
-const API_ENDPOINT = "https://api.replicate.com/v1/models/anthropic/claude-3.7-sonnet/predictions";
-// --- System Prompt for Robust Code Generation (Unchanged) ---
+const API_ENDPOINT = "https://api.replicate.com/v1/models/anthropic/claude-4-sonnet/predictions";
+// --- System Prompt for Robust Code Generation (Your existing detailed prompt) ---
 const SYSTEM_PROMPT = `You are an expert web developer AI assistant embedded in a browser extension. Your sole responsibility is to generate concise, complete, and resilient JavaScript code snippets to modify a live website's UI according to user instructions. The generated code will be injected directly onto the page by the extension.
 
 **Core Goal:**
-Generate the minimal, most robust JavaScript needed to achieve the desired change on the *current* web page, assuming strong security constraints (CSP, Trusted Types) and handling dynamic content loading (SPAs). For styling tasks, JavaScript should be used to create and apply the necessary styles.
+Generate the minimal, most robust JavaScript needed to achieve the desired change on the *current* web page, assuming strong security constraints (CSP, Trusted Types) and handling dynamic content loading (SPAs). For styling tasks, JavaScript should be used to create and apply the necessary styles. NOTE: For AI related feature requests, you will have to use the most possible AI workflow/model to achieve the specific asked request. Always the user's request may not be technical so you will have to decide which to use as most of the users will be average humans and not tech bros. But youo can include a side node or info and a field for user's api key if needed for any request.
+
+**VERY IMPORTANT:**
+Always create powerful scripts. Very powerful.
 
 **Output Format:**
 
@@ -17,7 +25,6 @@ Generate the minimal, most robust JavaScript needed to achieve the desired chang
 2. **NO explanations, apologies, greetings, or markdown formatting** (like \`javascript\` or \`css\`). Just the code.
 3. Always provide JavaScript code, even for styling-related tasks.
 4. For styling tasks, generate JavaScript that creates and applies the necessary CSS.
-5. If the request is ambiguous, impossible, potentially harmful, or cannot be reasonably achieved with a client-side script, respond with the exact text: ERROR: Cannot fulfill request.
 
 **JavaScript Generation Guidelines (CRITICAL):**
 
@@ -216,19 +223,44 @@ serve(async (req)=>{
     if (!REPLICATE_API_TOKEN) {
       throw new Error("Missing REPLICATE_API_TOKEN environment variable.");
     }
-    // Parse request body
-    const { prompt } = await req.json();
-    if (!prompt) {
-      throw new Error("Missing 'prompt' in request body.");
+    // Parse request body - MODIFIED to include optional fields
+    const { prompt: userInstruction, selected_element_selector, existing_script_content } = await req.json();
+    if (!userInstruction) {
+      throw new Error("Missing 'prompt' (userInstruction) in request body.");
     }
-    console.log(`Received prompt: ${prompt}`);
+    console.log(`[generate-script] Received user instruction: "${userInstruction}"`);
+    if (selected_element_selector) {
+      console.log(`[generate-script] Selected Element: "${selected_element_selector}"`);
+    }
+    if (existing_script_content) {
+      console.log(`[generate-script] Existing Script Content (first 100 chars): "${existing_script_content.substring(0, 100)}..."`);
+    }
+    // Dynamically construct the prompt for Claude - MODIFIED
+    let finalPromptForClaude = `User instruction: "${userInstruction}"`;
+    if (selected_element_selector) {
+      finalPromptForClaude += `\nTarget element selector: "${selected_element_selector}"`;
+    }
+    // If there's existing script content, frame it as a modification request
+    if (existing_script_content) {
+      finalPromptForClaude = `You are tasked with modifying an existing JavaScript script.
+Below is the original script:
+\`\`\`javascript
+${existing_script_content}
+\`\`\`
+
+Based on the original script, apply the following user instruction: "${userInstruction}"`;
+      if (selected_element_selector) {
+        finalPromptForClaude += `\nThe user has also specified a target element selector for this modification: "${selected_element_selector}"`;
+      }
+      finalPromptForClaude += `\n\nYour response should be the complete, new version of the script with the modifications applied. Adhere strictly to all guidelines in your system prompt.`;
+    }
+    console.log(`[generate-script] Final prompt for Claude: ${finalPromptForClaude}`);
     // --- Call Claude 3.7 API via Replicate ---
     const replicateRequestBody = {
       input: {
-        prompt: prompt,
+        prompt: finalPromptForClaude,
         system_prompt: SYSTEM_PROMPT,
-        max_tokens: 64000,
-        max_image_resolution: 0.5
+        max_tokens: 64000
       }
     };
     console.log("Sending request to Claude 3.7 via Replicate...");
@@ -243,24 +275,22 @@ serve(async (req)=>{
     });
     if (!res.ok) {
       const errorBody = await res.text();
-      console.error(`Replicate API error: ${res.status} ${res.statusText}`, errorBody);
+      console.error(`[generate-script] Replicate API error: ${res.status} ${res.statusText}`, errorBody);
       throw new Error(`Replicate API request failed: ${res.status} ${res.statusText}`);
     }
     const replicateResponse = await res.json();
     // --- Process Response ---
     let generatedText = "ERROR: Could not parse Claude response."; // Default error
-    // Handle Replicate's response structure
     if (replicateResponse.output) {
-      // Replicate returns an array of strings for Claude 3.7, join them
       if (Array.isArray(replicateResponse.output)) {
         generatedText = replicateResponse.output.join('');
       } else {
         generatedText = replicateResponse.output.toString();
       }
     } else {
-      console.error("Unexpected Replicate response structure:", JSON.stringify(replicateResponse, null, 2));
+      console.error("[generate-script] Unexpected Replicate response structure:", JSON.stringify(replicateResponse, null, 2));
     }
-    console.log(`Claude response received: ${typeof generatedText === 'string' ? generatedText.substring(0, 100) : 'Non-string response'}...`);
+    console.log(`[generate-script] Claude response received (first 100 chars): ${typeof generatedText === 'string' ? generatedText.substring(0, 100) : 'Non-string response'}...`);
     // Return the generated text
     return new Response(JSON.stringify({
       generatedCode: typeof generatedText === 'string' ? generatedText.trim() : generatedText
@@ -272,7 +302,7 @@ serve(async (req)=>{
       status: 200
     });
   } catch (error) {
-    console.error("Error in Edge Function:", error);
+    console.error("Error in generate-script Edge Function:", error);
     return new Response(JSON.stringify({
       error: error.message
     }), {

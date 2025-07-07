@@ -32,6 +32,22 @@ import DialogContent from '@mui/material/DialogContent';
 import DialogContentText from '@mui/material/DialogContentText';
 import DialogTitle from '@mui/material/DialogTitle';
 
+// Add pulse animation styles
+const pulseKeyframes = `
+  @keyframes pulse {
+    0% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.8; transform: scale(1.02); }
+    100% { opacity: 1; transform: scale(1); }
+  }
+`;
+
+// Inject the styles
+if (typeof document !== 'undefined') {
+  const styleSheet = document.createElement('style');
+  styleSheet.textContent = pulseKeyframes;
+  document.head.appendChild(styleSheet);
+}
+
 
 // TabPanel component for settings screen
 function TabPanel(props) {
@@ -100,8 +116,35 @@ function App() {
   const [scriptPendingDeletion, setScriptPendingDeletion] = useState(null);
   const triggerRef = useRef(null); // Ref to store the element that triggered the dialog
 
+  // State for UserScripts not available modal
+  const [isUserScriptsModalOpen, setIsUserScriptsModalOpen] = useState(false);
+  const [userScriptsGuidance, setUserScriptsGuidance] = useState('');
+
   const [userProfile, setUserProfile] = useState(null);
   const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState(false); 
+
+  // Function to check if UserScripts API is available
+  const checkUserScriptsAvailability = () => {
+    return new Promise((resolve) => {
+      try {
+        chrome.runtime.sendMessage({
+          type: 'CHECK_USER_SCRIPTS_AVAILABILITY'
+        }, (response) => {
+          if (chrome.runtime.lastError) {
+            console.warn("Could not check UserScripts availability:", chrome.runtime.lastError.message);
+            resolve({ available: false, error: "Could not check UserScripts availability" });
+          } else if (response) {
+            resolve(response);
+          } else {
+            resolve({ available: false, error: "No response from background script" });
+          }
+        });
+      } catch (error) {
+        console.error("Error checking UserScripts availability:", error);
+        resolve({ available: false, error: error.message });
+      }
+    });
+  };
 
 
   useEffect(() => {
@@ -389,6 +432,16 @@ function App() {
     setError(null);
     setInputValue('');
 
+    // Check UserScripts availability at the very beginning before any processing
+    const userScriptsCheck = await checkUserScriptsAvailability();
+    if (!userScriptsCheck.available) {
+      setUserScriptsGuidance(userScriptsCheck.guidance || userScriptsCheck.error);
+      setIsUserScriptsModalOpen(true);
+      setIsLoading(false);
+      setInputValue(originalMessageText); // Restore the input text
+      return;
+    }
+
     let activeChatId = currentChatId;
     let scriptContentForThisInteraction = currentScriptContentForChat;
     let isNewChat = false;
@@ -542,8 +595,20 @@ function App() {
                 if (chrome.runtime.lastError || (res && !res.success)) {
                   const eMsg = chrome.runtime.lastError?.message || res?.error || "Unknown script registration error.";
                   console.error(`Script registration failed for ${savedScriptId}: ${eMsg}`);
-                  setError(`Script registration failed: ${eMsg}`);
-                  setMessages(p => [...p, {id: `err-${Date.now()}`, sender:'magix', text: `Script registration error: ${eMsg}`, chat_id: activeChatId}]);
+                  
+                  // Check if this is a UserScripts API error and provide better messaging
+                  if (eMsg.includes("UserScripts API not available")) {
+                    setError("Please enable User Scripts to use this feature");
+                    setMessages(p => [...p, {
+                      id: `err-${Date.now()}`, 
+                      sender:'magix', 
+                      text: `⚠️ To use Magix, you need to enable User Scripts:\n\n${eMsg.split('. ')[1] || eMsg}`, 
+                      chat_id: activeChatId
+                    }]);
+                  } else {
+                    setError(`Script registration failed: ${eMsg}`);
+                    setMessages(p => [...p, {id: `err-${Date.now()}`, sender:'magix', text: `Script registration error: ${eMsg}`, chat_id: activeChatId}]);
+                  }
                 } else if (res?.success) {
                   // console.log(`Script ${savedScriptId} registered successfully via background.`);
                   // Refresh active scripts list after successful registration
@@ -829,17 +894,82 @@ function App() {
   };
 
   const renderHomeInputArea = () => (
-    <Box sx={{ display: 'flex', flexDirection: 'column', p: 1, borderRadius: 3, bgcolor: 'grey.100', border: '1px solid #e0e0e0', position: 'relative', mb: 2, pb: selectedElementPath ? '48px' : '40px' }}>
+    <Box sx={{ display: 'flex', flexDirection: 'column', p: 1, borderRadius: 6, bgcolor: 'grey.100', border: '1px solid #e0e0e0', position: 'relative', mb: 2, pb: selectedElementPath ? '48px' : '40px' }}>
       <Chip icon={<MyLocationIcon sx={{ fontSize: '1rem', color: (isSelectingElement || selectedElementPath) ? 'primary.main' : 'grey.500' }} />} label={isSelectingElement ? "Selecting..." : selectedElementPath ? "Element Selected" : "Select Element"} size="small" variant={(isSelectingElement || selectedElementPath) ? "filled" : "outlined"} color={(isSelectingElement || selectedElementPath) ? "primary" : "default"} clickable onClick={async () => { if (isSelectingElement) return; if (selectedElementPath) { setSelectedElementPath(''); } else { setIsSelectingElement(true); setSelectedElementPath(''); setError(null); try { const [tab] = await chrome.tabs.query({ active: true, currentWindow: true }); if (tab?.id) chrome.tabs.sendMessage(tab.id, { type: 'START_ELEMENT_SELECTION' }, r => { if (chrome.runtime.lastError) { setError(`Selection error: ${chrome.runtime.lastError.message}`); setIsSelectingElement(false); }}); else throw new Error("No active tab."); } catch (e) { setError(`Selection error: ${e.message}`); setIsSelectingElement(false); }}}} sx={{ position: 'absolute', bottom: 8, left: 8, fontSize: '0.75rem', height: '28px', borderColor: '#e0e0e0', '& .MuiChip-label': { px: '8px' }, '& .MuiChip-icon': { ml: '6px', mr: '-4px' }}} />
       <TextField fullWidth multiline minRows={2} maxRows={3} variant="standard" placeholder={animatedPlaceholder + '|'} value={inputValue} onChange={handleInputChange} onKeyDown={handleKeyDown} InputProps={{ disableUnderline: true, sx: { fontSize: '0.9rem' } }} sx={{ flexGrow: 1, '& .MuiInputBase-root': { py: 0.5 } }} disabled={isLoading} />
-      <IconButton onClick={handleSubmit} disabled={isLoading || (!inputValue.trim() && !currentChatId) } sx={{ position: 'absolute', bottom: 8, right: 8, bgcolor: 'common.black', color: 'common.white', width: 28, height: 28, '&:hover': { bgcolor: 'grey.800' }, '&.Mui-disabled': { backgroundColor: 'grey.300', color: 'grey.500' }}}>{isLoading ? <CircularProgress size={16} sx={{ color: 'white' }}/> : <ArrowUpwardIcon sx={{ fontSize: '1rem' }} />}</IconButton>
+      <IconButton onClick={handleSubmit} disabled={isLoading || (!inputValue.trim() && !currentChatId) } sx={{ position: 'absolute', bottom: 8, right: 8, bgcolor: 'common.black', color: 'common.white', width: 28, height: 28, borderRadius: '50%', '&:hover': { bgcolor: 'grey.800' }, '&.Mui-disabled': { backgroundColor: 'grey.300', color: 'grey.500' }}}>{isLoading ? <CircularProgress size={16} sx={{ color: 'white' }}/> : <ArrowUpwardIcon sx={{ fontSize: '1rem' }} />}</IconButton>
     </Box>
   );
 
   const renderChatInputArea = () => (
-    <Box sx={{ display: 'flex', flexDirection: 'row', alignItems: 'center', p: 1, px: 2, pb: 2, borderRadius: 0, bgcolor: 'grey.100', border: '1px solid #e0e0e0', mt: 'auto' }}>
-      <TextField fullWidth multiline={false} variant="standard" placeholder="Ask Magix..." value={inputValue} onChange={handleInputChange} onKeyDown={handleKeyDown} InputProps={{ disableUnderline: true, sx: { fontSize: '0.9rem' } }} sx={{ mr: 1, '& .MuiInputBase-root': { py: 1 } }} disabled={isLoading} />
-      <IconButton onClick={handleSubmit} disabled={isLoading || !inputValue.trim()} sx={{ bgcolor: 'common.black', color: 'common.white', width: 28, height: 28, '&:hover': { bgcolor: 'grey.800' }, '&.Mui-disabled': { backgroundColor: 'grey.300', color: 'grey.500' }}}>{isLoading ? <CircularProgress size={16} sx={{ color: 'white' }}/> : <ArrowUpwardIcon sx={{ fontSize: '1rem' }} />}</IconButton>
+    <Box sx={{ p: 2, pt: 1 }}>
+      <Box sx={{ 
+        display: 'flex', 
+        alignItems: 'center', 
+        bgcolor: 'white',
+        border: '1px solid', 
+        borderColor: 'grey.200',
+        borderRadius: 6, 
+        px: 2, 
+        py: 1.5,
+        boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
+        '&:focus-within': {
+          borderColor: 'grey.400',
+          boxShadow: '0 2px 12px rgba(0,0,0,0.08)'
+        }
+      }}>
+        <TextField 
+          fullWidth 
+          multiline={false} 
+          variant="standard" 
+          placeholder="Ask Magix to modify this page..." 
+          value={inputValue} 
+          onChange={handleInputChange} 
+          onKeyDown={handleKeyDown} 
+          InputProps={{ 
+            disableUnderline: true, 
+            sx: { 
+              fontSize: '0.9rem',
+              color: 'text.primary',
+              '& input::placeholder': {
+                color: 'grey.400',
+                opacity: 1
+              }
+            } 
+          }} 
+          sx={{ 
+            '& .MuiInputBase-root': { 
+              py: 0
+            } 
+          }} 
+          disabled={isLoading} 
+        />
+        <IconButton 
+          onClick={handleSubmit} 
+          disabled={isLoading || !inputValue.trim()} 
+                     sx={{ 
+             bgcolor: isLoading || !inputValue.trim() ? 'grey.200' : 'common.black', 
+             color: isLoading || !inputValue.trim() ? 'grey.400' : 'white', 
+             width: 32, 
+             height: 32, 
+             ml: 1,
+             borderRadius: '50%',
+             '&:hover': { 
+               bgcolor: isLoading || !inputValue.trim() ? 'grey.200' : 'grey.800' 
+             },
+             '&.Mui-disabled': { 
+               backgroundColor: 'grey.200', 
+               color: 'grey.400' 
+             }
+           }}
+        >
+          {isLoading ? (
+            <CircularProgress size={16} sx={{ color: 'grey.400' }}/> 
+          ) : (
+            <ArrowUpwardIcon sx={{ fontSize: '1.1rem' }} />
+          )}
+        </IconButton>
+      </Box>
     </Box>
   );
 
@@ -847,16 +977,25 @@ function App() {
     const displayedScripts = getDisplayedScripts();
     
     return (
-      <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', flexGrow: 1, overflowY: 'auto' }}>
-        <Typography variant="h6" component="h1" sx={{ textAlign: 'center', mb: 2, fontSize: '1rem', fontWeight: 600 }}>Modify any website 🪄</Typography>
-        {renderHomeInputArea()}
-        {session && (
-          <Box sx={{ mt: 2 }}>
-            <Typography variant="body2" sx={{ mb: 1, fontWeight: 500, color: 'text.secondary' }}>Active Modifications:</Typography>
-            <List dense sx={{ pt: 0, maxHeight: '350px', overflowY: 'auto', '&::-webkit-scrollbar': { display: 'none' }, scrollbarWidth: 'none', '-ms-overflow-style': 'none' }}>
+    <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', flexGrow: 1, overflowY: 'auto' }}>
+        <Typography variant="h6" component="h1" sx={{ 
+          textAlign: 'center', 
+          mb: 2, 
+          fontSize: '1rem', 
+          fontWeight: 600,
+          fontFamily: '"Instrument Serif", serif',
+          fontStyle: 'italic'
+        }}>
+          Modify Any Website
+        </Typography>
+      {renderHomeInputArea()}
+      {session && (
+        <Box sx={{ mt: 2 }}>
+            <Typography variant="body2" sx={{ mb: 1.5, fontWeight: 400, color: 'grey.500', fontSize: '0.75rem' }}>Active Modifications</Typography>
+          <List dense sx={{ pt: 0, maxHeight: '350px', overflowY: 'auto', '&::-webkit-scrollbar': { display: 'none' }, scrollbarWidth: 'none', '-ms-overflow-style': 'none' }}>
               {displayedScripts.length > 0 ? (
                 displayedScripts.map((script) => (
-                <ListItemButton key={script.id} onClick={() => handleScriptItemClick(script)} sx={{ border: '1px solid #e0e0e0', borderRadius: 2, mb: 1, py: 0.5 }}>
+                <ListItemButton key={script.id} onClick={() => handleScriptItemClick(script)} sx={{ border: '1px solid #e0e0e0', borderRadius: 4, mb: 1, py: 0.5 }}>
                   <ListItemText id={`script-list-item-${script.id}`} primary={script.title} secondary={script.domain_pattern || 'All sites'} primaryTypographyProps={{ sx: { fontSize: '0.9rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }} secondaryTypographyProps={{ sx: { fontSize: '0.8rem' } }} />
                   <IconButton
                     edge="end"
@@ -872,7 +1011,20 @@ function App() {
                     <DeleteIcon sx={{ color: 'grey.500', fontSize: '1.1rem' }} />
                   </IconButton>
                 </ListItemButton>
-              )) ) : ( <Typography variant="caption" color="text.secondary" sx={{ textAlign: 'center', display: 'block', mt: 2 }}>No active modifications. Create one using the input above!</Typography> )}
+              )) ) : ( 
+                <Typography variant="caption" sx={{ 
+                  textAlign: 'center', 
+                  display: 'block', 
+                  mt: 3, 
+                  mx: 2,
+                  fontSize: '0.75rem',
+                  color: 'grey.400',
+                  fontWeight: 400,
+                  lineHeight: 1.4
+                }}>
+                  No active modifications. Create one using the input above
+                </Typography> 
+              )}
           </List>
          </Box>
        )}
@@ -884,15 +1036,15 @@ function App() {
   const renderChatScreen = () => (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <Box sx={{ position: 'sticky', top: 0, zIndex: 1, bgcolor: 'background.paper', p: 1, mb: 1, display: 'flex', alignItems: 'center' }}>
-         <IconButton onClick={() => { setCurrentChatId(null); /* useEffect will handle view change */ }} size="small" sx={{ mr: 1}}><ArrowBackIcon /></IconButton>
-         <Typography variant="subtitle1" sx={{ flexGrow: 1, textAlign: 'center', fontWeight: 500, fontSize: '0.95rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{currentChatTitle || "Chat"}</Typography>
+         <IconButton onClick={() => { setCurrentChatId(null); /* useEffect will handle view change */ }} size="small" sx={{ mr: 1, borderRadius: 2, '&:hover': { bgcolor: 'grey.50' } }}><ArrowBackIcon sx={{ fontSize: '1.1rem', color: 'grey.500' }} /></IconButton>
+         <Typography variant="subtitle1" sx={{ flexGrow: 1, textAlign: 'center', fontWeight: 400, fontSize: '0.85rem', color: 'grey.500', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{currentChatTitle || "Chat"}</Typography>
          <Box sx={{ width: 40 }} />
       </Box>
       <Box ref={chatContainerRef} sx={{ flexGrow: 1, overflowY: 'auto', p: 2, display: 'flex', flexDirection: 'column', gap: 1 }}>
         {messages.map((msg) => (
           <Box key={msg.id} sx={{ alignSelf: msg.sender === 'user' ? 'flex-end' : 'flex-start', maxWidth: '80%' }}>
-            {msg.status === 'processing' ? ( <Paper className="shimmer-bubble" elevation={0} sx={{ p: 1, borderRadius: 2, bgcolor: 'grey.200', display: 'flex', alignItems: 'center', gap: 1, overflow: 'hidden', position: 'relative' }}><Typography variant="body2" sx={{ fontWeight: 500, color: 'text.secondary', fontSize: '0.9rem' }}>Doing magix...</Typography></Paper>
-            ) : msg.sender === 'user' ? ( <Paper elevation={0} sx={{ p: 1.5, borderRadius: 2, bgcolor: 'grey.200' }}><Typography variant="body2" sx={{ fontSize: '0.9rem', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{msg.text}</Typography></Paper>
+            {msg.status === 'processing' ? ( <Paper className="shimmer-bubble" elevation={0} sx={{ px: 2, py: 1, borderRadius: 20, bgcolor: 'grey.200', display: 'flex', alignItems: 'center', gap: 1, overflow: 'hidden', position: 'relative' }}><Typography variant="body2" sx={{ fontWeight: 500, color: 'text.secondary', fontSize: '0.9rem' }}>Doing magix...</Typography></Paper>
+            ) : msg.sender === 'user' ? ( <Paper elevation={0} sx={{ p: 1.5, borderRadius: 6, bgcolor: '#f4c2c4' }}><Typography variant="body2" sx={{ fontSize: '0.9rem', whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: 'black' }}>{msg.text}</Typography></Paper>
             ) : msg.codeToCopy ? ( <Box><Typography variant="body2" sx={{ fontSize: '0.9rem', whiteSpace: 'pre-wrap', wordBreak: 'break-word', mb: 1 }}>{msg.text}</Typography><Paper variant="outlined" sx={{ p: 1, bgcolor: 'grey.100', position: 'relative', borderRadius: 1, overflowX: 'auto' }}><pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all', fontSize: '0.8rem' }}><code>{msg.codeToCopy}</code></pre><IconButton size="small" onClick={() => navigator.clipboard.writeText(msg.codeToCopy)} sx={{ position: 'absolute', top: 4, right: 4 }} title="Copy code"><ContentCopyIcon sx={{ fontSize: '0.9rem' }} /></IconButton></Paper></Box>
             ) : ( <Typography variant="body2" sx={{ fontSize: '0.9rem', whiteSpace: 'pre-wrap', wordBreak: 'break-word', alignSelf: 'flex-start' }}>{msg.text}</Typography> )}
           </Box>
@@ -904,90 +1056,328 @@ function App() {
   );
 
   const renderAccountSettingsScreen = () => (
-    <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', height: '100%' }}>
-       <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-         <IconButton onClick={() => setCurrentView('home')} size="small"><ArrowBackIcon /></IconButton>
-         <Typography variant="h6" sx={{ ml: 1, fontSize: '1.1rem', fontWeight: 600 }}>Account Settings</Typography>
+    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', bgcolor: 'background.paper' }}>
+       {/* Header */}
+       <Box sx={{ display: 'flex', alignItems: 'center', px: 2, py: 2, borderBottom: '1px solid', borderColor: 'grey.100' }}>
+         <IconButton onClick={() => setCurrentView('home')} size="small" sx={{ mr: 1, borderRadius: 2, '&:hover': { bgcolor: 'grey.50' } }}>
+           <ArrowBackIcon sx={{ fontSize: '1.1rem', color: 'grey.500' }} />
+         </IconButton>
+         <Typography variant="h6" sx={{ 
+           fontSize: '0.85rem', 
+           fontWeight: 400, 
+           color: 'grey.500'
+         }}>
+           Account Settings
+         </Typography>
        </Box>
-       <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
-         <Tabs value={settingsTab} onChange={handleSettingsTabChange} aria-label="account settings tabs" textColor="inherit" sx={{ '& .MuiTabs-indicator': { backgroundColor: 'common.black' }, '& .Mui-selected': { color: 'common.black', fontWeight: 600 }, }}>
-           <Tab label="Account Info" {...a11yProps(0)} sx={{ textTransform: 'none', fontSize: '0.9rem' }} />
-           <Tab label="Billing" {...a11yProps(1)} sx={{ textTransform: 'none', fontSize: '0.9rem' }} />
+
+       {/* Tab Navigation */}
+       <Box sx={{ borderBottom: '1px solid', borderColor: 'grey.100', px: 2 }}>
+         <Tabs 
+           value={settingsTab} 
+           onChange={handleSettingsTabChange} 
+           aria-label="account settings tabs" 
+           textColor="inherit" 
+           sx={{ 
+             '& .MuiTabs-indicator': { 
+               backgroundColor: 'common.black',
+               height: 2,
+               borderRadius: 1
+             }, 
+             '& .Mui-selected': { 
+               color: 'common.black', 
+               fontWeight: 500 
+             },
+             '& .MuiTab-root': {
+               fontSize: '0.85rem',
+               fontWeight: 400,
+               textTransform: 'none',
+               color: 'grey.500',
+               minHeight: 48
+             }
+           }}
+         >
+           <Tab label="Account Info" {...a11yProps(0)} />
+           <Tab label="Billing" {...a11yProps(1)} />
          </Tabs>
        </Box>
-       <TabPanel value={settingsTab} index={0}>
-         <Box sx={{ pt: 3, px: 1 }}>
-           <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-             <TextField label="Name" variant="outlined" size="small" value={userName} onChange={(e) => setUserName(e.target.value)} InputProps={{ sx: { fontSize: '0.9rem' } }} sx={{ flexGrow: 1, mr: 1, '& .MuiOutlinedInput-root': { borderRadius: 2 } }} />
-            <Button variant="contained" size="small" onClick={handleNameUpdate} disableElevation sx={{ textTransform: 'none', borderRadius: 2, bgcolor: 'common.black', '&:hover': { bgcolor: 'grey.800' } }}>Update</Button>
-         </Box>
-         <TextField label="Email" variant="outlined" size="small" disabled value={session?.user?.email || ''} fullWidth InputProps={{ sx: { fontSize: '0.9rem' } }} sx={{ mb: 3, '& .MuiOutlinedInput-root': { borderRadius: 2 } }} />
-         {/* <Divider sx={{ my: 2 }} /> */}
-         {/* Danger Zone Removed */}
-         {/* <Box sx={{ mt: 2 }}>
-            <Typography variant="subtitle2" color="error" sx={{ mb: 1, fontWeight: 500 }}>Danger Zone</Typography>
-            <Button variant="outlined" color="error" size="small" onClick={handleDeleteAccount} disableElevation sx={{ textTransform: 'none', borderRadius: 2 }}>Delete Account</Button>
-         </Box> */}
-         <Divider sx={{ my: 3 }} />
-         <Box sx={{ display: 'flex', justifyContent: 'center', gap: 2, flexWrap: 'wrap', mt: 2 /* Added margin top after removing danger zone */ }}>
-            <Link href="https://trymagix.com/privacy" target="_blank" rel="noopener noreferrer" underline="hover" variant="caption" color="text.secondary">Privacy Policy</Link>
-            <Link href="https://trymagix.com/terms" target="_blank" rel="noopener noreferrer" underline="hover" variant="caption" color="text.secondary">Terms of Service</Link>
-            <Link href="https://tally.so/r/mVyQYl" target="_blank" rel="noopener noreferrer" underline="hover" variant="caption" color="text.secondary">Contact Us</Link>
-         </Box>
-        </Box>
-       </TabPanel>
-       <TabPanel value={settingsTab} index={1}>
-         <Box sx={{ pt: 3, px: 1 }}>
-           {userProfile?.is_pro ? (
-             <Chip label="Pro User" size="small" sx={{ mb: 2, bgcolor: 'success.main', color: 'common.white', fontWeight: 500 }} />
-           ) : (
-             <Chip label="Free Tier" size="small" sx={{ mb: 2 }} />
-           )}
 
-           {userProfile?.is_pro ? (
-             <Typography variant="body2" sx={{ mb: 1 }}>You have unlimited requests!</Typography>
-           ) : (
-             <>
-               <Typography variant="body2" sx={{ mb: 1 }}>
-                 Monthly Requests: {userProfile?.request_count !== undefined ? `${10 - (userProfile.request_count || 0)} / 10 used` : 'Loading...'}
+       {/* Content Area */}
+       <Box sx={{ flexGrow: 1, overflowY: 'auto' }}>
+         <TabPanel value={settingsTab} index={0}>
+           <Box sx={{ p: 3 }}>
+             {/* Account Info Section */}
+             <Box sx={{ mb: 4 }}>
+               <Typography variant="subtitle2" sx={{ 
+                 mb: 2, 
+                 fontSize: '0.75rem', 
+                 fontWeight: 500, 
+                 color: 'grey.500',
+                 textTransform: 'uppercase',
+                 letterSpacing: '0.5px'
+               }}>
+                 Personal Information
                </Typography>
-               <LinearProgress 
-                 variant="determinate" 
-                 value={userProfile?.request_count !== undefined ? ((10 - (userProfile.request_count || 0)) / 10) * 100 : 0} 
-                 color={userProfile?.request_count !== undefined && (10 - userProfile.request_count) >= 8 ? 'error' : (10 - userProfile.request_count) >= 5 ? 'warning' : 'success'} 
-                 sx={{ mb: 2, height: 8, borderRadius: 1 }} 
+               
+               <Box sx={{ display: 'flex', alignItems: 'flex-end', gap: 2, mb: 3 }}>
+                 <TextField 
+                   label="Name" 
+                   variant="outlined" 
+                   size="small" 
+                   value={userName} 
+                   onChange={(e) => setUserName(e.target.value)} 
+                   InputProps={{ sx: { fontSize: '0.85rem' } }}
+                   InputLabelProps={{ sx: { fontSize: '0.85rem' } }}
+                   sx={{ 
+                     flexGrow: 1,
+                     '& .MuiOutlinedInput-root': { 
+                       borderRadius: 3,
+                       '&:hover .MuiOutlinedInput-notchedOutline': {
+                         borderColor: 'grey.400'
+                       }
+                     }
+                   }} 
+                 />
+                 <Button 
+                   variant="contained" 
+                   size="small" 
+                   onClick={handleNameUpdate} 
+                   disableElevation 
+                   sx={{ 
+                     textTransform: 'none', 
+                     borderRadius: 3, 
+                     bgcolor: 'common.black',
+                     fontSize: '0.8rem',
+                     fontWeight: 500,
+                     px: 2,
+                     py: 1,
+                     '&:hover': { bgcolor: 'grey.800' } 
+                   }}
+                 >
+                   Update
+                 </Button>
+               </Box>
+
+               <TextField 
+                 label="Email" 
+                 variant="outlined" 
+                 size="small" 
+                 disabled 
+                 value={session?.user?.email || ''} 
+                 fullWidth 
+                 InputProps={{ sx: { fontSize: '0.85rem' } }}
+                 InputLabelProps={{ sx: { fontSize: '0.85rem' } }}
+                 sx={{ 
+                   '& .MuiOutlinedInput-root': { 
+                     borderRadius: 3,
+                     bgcolor: 'grey.50'
+                   }
+                 }} 
                />
-               <Typography variant="caption" display="block" sx={{ mb: 2, color: 'text.secondary' }}>
-                 Your free requests will reset on the 1st of next month (UTC).
+             </Box>
+
+             {/* Footer Links */}
+             <Box sx={{ pt: 3, borderTop: '1px solid', borderColor: 'grey.100' }}>
+               <Typography variant="subtitle2" sx={{ 
+                 mb: 2, 
+                 fontSize: '0.75rem', 
+                 fontWeight: 500, 
+                 color: 'grey.500',
+                 textTransform: 'uppercase',
+                 letterSpacing: '0.5px'
+               }}>
+                 Legal
                </Typography>
-             </>
-           )}
-          
-           {userProfile?.is_pro ? (
-             <Button 
-               variant="contained" 
-               size="small" 
-               disableElevation 
-               sx={{ textTransform: 'none', borderRadius: 2, bgcolor: 'common.black', '&:hover': { bgcolor: 'grey.800' } }}
-               onClick={() => userProfile.customer_portal_url && window.open(userProfile.customer_portal_url, '_blank')}
-               disabled={!userProfile.customer_portal_url}
-             >
-               Manage Billing
-             </Button>
-           ) : (
-             <Button 
-               variant="contained" 
-               size="small" 
-               disableElevation 
-               color="success"
-               sx={{ textTransform: 'none', borderRadius: 2 }}
-               onClick={() => window.open(`https://trymagix.lemonsqueezy.com/buy/18a60869-3b1a-4e71-a0f9-6ecd15b3b6d5?checkout[email]=${session?.user?.email}`, '_blank')}
-             >
-               Upgrade to Pro
-             </Button>
-           )}
-        </Box>
-       </TabPanel>
+               <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+                 <Link 
+                   href="https://trymagix.com/privacy" 
+                   target="_blank" 
+                   rel="noopener noreferrer" 
+                   underline="hover" 
+                   sx={{ 
+                     fontSize: '0.8rem',
+                     color: 'grey.600',
+                     fontWeight: 400,
+                     '&:hover': { color: 'text.primary' }
+                   }}
+                 >
+                   Privacy Policy
+                 </Link>
+                 <Link 
+                   href="https://trymagix.com/terms" 
+                   target="_blank" 
+                   rel="noopener noreferrer" 
+                   underline="hover" 
+                   sx={{ 
+                     fontSize: '0.8rem',
+                     color: 'grey.600',
+                     fontWeight: 400,
+                     '&:hover': { color: 'text.primary' }
+                   }}
+                 >
+                   Terms of Service
+                 </Link>
+                 <Link 
+                   href="https://tally.so/r/mVyQYl" 
+                   target="_blank" 
+                   rel="noopener noreferrer" 
+                   underline="hover" 
+                   sx={{ 
+                     fontSize: '0.8rem',
+                     color: 'grey.600',
+                     fontWeight: 400,
+                     '&:hover': { color: 'text.primary' }
+                   }}
+                 >
+                   Contact Us
+                 </Link>
+               </Box>
+             </Box>
+           </Box>
+         </TabPanel>
+
+         <TabPanel value={settingsTab} index={1}>
+           <Box sx={{ p: 3 }}>
+             {/* Plan Status */}
+             <Box sx={{ mb: 4 }}>
+               <Typography variant="subtitle2" sx={{ 
+                 mb: 2, 
+                 fontSize: '0.75rem', 
+                 fontWeight: 500, 
+                 color: 'grey.500',
+                 textTransform: 'uppercase',
+                 letterSpacing: '0.5px'
+               }}>
+                 Current Plan
+               </Typography>
+               
+               {userProfile?.is_pro ? (
+                 <Box sx={{ 
+                   bgcolor: 'success.50', 
+                   border: '1px solid', 
+                   borderColor: 'success.200',
+                   borderRadius: 3, 
+                   p: 2.5,
+                   mb: 3
+                 }}>
+                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                     <Chip 
+                       label="Pro User" 
+                       size="small" 
+                       sx={{ 
+                         bgcolor: 'success.main', 
+                         color: 'white', 
+                         fontWeight: 500,
+                         fontSize: '0.75rem'
+                       }} 
+                     />
+                   </Box>
+                   <Typography variant="body2" sx={{ 
+                     fontSize: '0.85rem',
+                     color: 'success.800',
+                     fontWeight: 400
+                   }}>
+                     You have unlimited requests!
+                   </Typography>
+                 </Box>
+               ) : (
+                 <Box sx={{ 
+                   bgcolor: 'grey.50', 
+                   border: '1px solid', 
+                   borderColor: 'grey.200',
+                   borderRadius: 3, 
+                   p: 2.5,
+                   mb: 3
+                 }}>
+                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+                     <Chip 
+                       label="Free Tier" 
+                       size="small" 
+                       sx={{ 
+                         bgcolor: 'grey.300', 
+                         color: 'grey.700',
+                         fontWeight: 500,
+                         fontSize: '0.75rem'
+                       }} 
+                     />
+                   </Box>
+                   
+                   <Typography variant="body2" sx={{ 
+                     mb: 1.5, 
+                     fontSize: '0.8rem',
+                     color: 'text.secondary',
+                     fontWeight: 400
+                   }}>
+                     Monthly Requests: {userProfile?.request_count !== undefined ? `${10 - (userProfile.request_count || 0)} / 10 used` : 'Loading...'}
+                   </Typography>
+                   
+                   <LinearProgress 
+                     variant="determinate" 
+                     value={userProfile?.request_count !== undefined ? ((10 - (userProfile.request_count || 0)) / 10) * 100 : 0} 
+                     color={userProfile?.request_count !== undefined && (10 - userProfile.request_count) >= 8 ? 'error' : (10 - userProfile.request_count) >= 5 ? 'warning' : 'success'} 
+                     sx={{ 
+                       mb: 1.5, 
+                       height: 6, 
+                       borderRadius: 3,
+                       bgcolor: 'grey.200'
+                     }} 
+                   />
+                   
+                   <Typography variant="caption" sx={{ 
+                     fontSize: '0.7rem', 
+                     color: 'grey.500',
+                     fontWeight: 400
+                   }}>
+                     Your free requests will reset on the 1st of next month (UTC)
+                   </Typography>
+                 </Box>
+               )}
+
+               {/* Action Button */}
+               {userProfile?.is_pro ? (
+                 <Button 
+                   variant="contained" 
+                   size="medium"
+                   fullWidth
+                   disableElevation 
+                   sx={{ 
+                     textTransform: 'none', 
+                     borderRadius: 3,
+                     bgcolor: 'common.black',
+                     fontSize: '0.85rem',
+                     fontWeight: 500,
+                     py: 1.5,
+                     '&:hover': { bgcolor: 'grey.800' } 
+                   }}
+                   onClick={() => userProfile.customer_portal_url && window.open(userProfile.customer_portal_url, '_blank')}
+                   disabled={!userProfile.customer_portal_url}
+                 >
+                   Manage Billing
+                 </Button>
+               ) : (
+                 <Button 
+                   variant="contained" 
+                   size="medium"
+                   fullWidth
+                   disableElevation 
+                   sx={{ 
+                     textTransform: 'none', 
+                     borderRadius: 3,
+                     bgcolor: '#4caf50',
+                     fontSize: '0.85rem',
+                     fontWeight: 500,
+                     py: 1.5,
+                     '&:hover': { bgcolor: '#45a049' } 
+                   }}
+                   onClick={() => window.open(`https://trymagix.lemonsqueezy.com/buy/18a60869-3b1a-4e71-a0f9-6ecd15b3b6d5?checkout[email]=${session?.user?.email}`, '_blank')}
+                 >
+                   Upgrade to Pro
+                 </Button>
+               )}
+             </Box>
+           </Box>
+         </TabPanel>
+       </Box>
     </Box>
   );
 
@@ -995,39 +1385,45 @@ function App() {
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh', bgcolor: 'background.paper', justifyContent: currentView === 'home' && !session ? 'center' : 'flex-start' }}>
       {session && currentView !== 'settings' && currentView !== 'chat' && (
         <IconButton onClick={handleAccountMenuOpen} size="small" sx={{ position: 'absolute', top: 16, left: 16, zIndex: 2 }}>
-           <AccountCircleIcon sx={{ color: 'grey.600', fontSize: '1.25rem' }} />
+           <AccountCircleIcon sx={{ color: 'grey.400', fontSize: '1.4rem' }} />
         </IconButton>
       )}
-       <Popover id={accountMenuId} open={openAccountMenu} anchorEl={accountMenuAnchorEl} onClose={handleAccountMenuClose} anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }} transformOrigin={{ vertical: 'top', horizontal: 'left'}} slotProps={{ paper: { sx: { width: '200px', mt: 1, borderRadius: 2 } } }} >
-          <List dense>
-            <ListItem>
+       <Popover id={accountMenuId} open={openAccountMenu} anchorEl={accountMenuAnchorEl} onClose={handleAccountMenuClose} anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }} transformOrigin={{ vertical: 'top', horizontal: 'left'}} slotProps={{ paper: { sx: { width: '220px', mt: 1, borderRadius: 4, boxShadow: '0 8px 32px rgba(0,0,0,0.12)', border: '1px solid rgba(0,0,0,0.04)' } } }} >
+          <List dense sx={{ py: 1 }}>
+            <ListItem sx={{ px: 2, py: 1 }}>
               <ListItemText 
-                primary="Monthly Requests:" 
+                primary="Monthly Requests" 
                 secondary={
                   userProfile ? (
                     userProfile.is_pro ? "Unlimited" : 
                     (userProfile.request_count !== undefined ? `${10 - userProfile.request_count} / 10 used` : "Loading...")
                   ) : "Loading..."
                 } 
+                primaryTypographyProps={{ 
+                  sx: { fontSize: '0.8rem', fontWeight: 500, color: 'text.primary' }
+                }}
+                secondaryTypographyProps={{ 
+                  sx: { fontSize: '0.75rem', color: 'grey.500', mt: 0.25 }
+                }}
               />
             </ListItem>
             {currentView === 'chat' ? (
-              <ListItemButton onClick={() => { setCurrentView('home'); setCurrentChatId(null); setMessages([]); setCurrentScriptContentForChat(''); setCurrentChatTitle(''); handleAccountMenuClose(); }}>
-                <ListItemText primary="Go to dashboard" />
+              <ListItemButton onClick={() => { setCurrentView('home'); setCurrentChatId(null); setMessages([]); setCurrentScriptContentForChat(''); setCurrentChatTitle(''); handleAccountMenuClose(); }} sx={{ mx: 1, borderRadius: 2, py: 1, '&:hover': { bgcolor: 'grey.50' } }}>
+                <ListItemText primary="Go to dashboard" primaryTypographyProps={{ sx: { fontSize: '0.85rem', fontWeight: 400 } }} />
               </ListItemButton>
             ) : (
-              <ListItemButton onClick={() => { setCurrentView('settings'); handleAccountMenuClose(); }}>
-                <ListItemText primary="Account settings" />
+              <ListItemButton onClick={() => { setCurrentView('settings'); handleAccountMenuClose(); }} sx={{ mx: 1, borderRadius: 2, py: 1, '&:hover': { bgcolor: 'grey.50' } }}>
+                <ListItemText primary="Account settings" primaryTypographyProps={{ sx: { fontSize: '0.85rem', fontWeight: 400 } }} />
               </ListItemButton>
             )}
              {currentView === 'chat' && (
-                 <ListItemButton onClick={() => { setCurrentView('settings'); handleAccountMenuClose(); }}>
-                    <ListItemText primary="Account settings" />
+                 <ListItemButton onClick={() => { setCurrentView('settings'); handleAccountMenuClose(); }} sx={{ mx: 1, borderRadius: 2, py: 1, '&:hover': { bgcolor: 'grey.50' } }}>
+                    <ListItemText primary="Account settings" primaryTypographyProps={{ sx: { fontSize: '0.85rem', fontWeight: 400 } }} />
                  </ListItemButton>
              )}
              {currentView !== 'chat' && (
-                 <ListItemButton onClick={() => { supabase.auth.signOut(); handleAccountMenuClose(); }}>
-                   <ListItemText primary="Log out" />
+                 <ListItemButton onClick={() => { supabase.auth.signOut(); handleAccountMenuClose(); }} sx={{ mx: 1, borderRadius: 2, py: 1, '&:hover': { bgcolor: 'grey.50' } }}>
+                   <ListItemText primary="Log out" primaryTypographyProps={{ sx: { fontSize: '0.85rem', fontWeight: 400 } }} />
                  </ListItemButton>
              )}
           </List>
@@ -1043,65 +1439,192 @@ function App() {
         onClose={() => setIsUpgradeModalOpen(false)}
         PaperProps={{ 
           sx: { 
-            borderRadius: 4, // More pronounced rounding
-            p: 2, // Overall padding for the Paper
-            minWidth: '300px', // Ensure it's not too narrow
-            maxWidth: '380px', // Prevent it from being too wide
+            borderRadius: 4,
+            p: 2.5,
+            minWidth: '280px',
+            maxWidth: '320px',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.12)',
           } 
         }}
       >
-        <DialogTitle sx={{ textAlign: 'center', fontSize: '1.25rem', fontWeight: 'medium', pb: 1 }}>
+        <DialogTitle sx={{ textAlign: 'center', fontSize: '1.2rem', fontWeight: 600, pb: 1, px: 1 }}>
           {"Unlock Unlimited Magix"}
         </DialogTitle>
-        <DialogContent sx={{ textAlign: 'center', pt: 0 }}> {/* Center align content */}
-          <DialogContentText sx={{ mb: 2.5, fontSize: '0.9rem', color: 'text.secondary' }}>
+        <DialogContent sx={{ textAlign: 'center', pt: 0, px: 1 }}>
+          <DialogContentText sx={{ mb: 2, fontSize: '0.85rem', color: 'text.secondary', lineHeight: 1.4 }}>
             You've used all your 10 free requests for this month.
           </DialogContentText>
-          <Typography variant="subtitle1" sx={{ mb: 1.5, fontSize: '1rem', fontWeight: 'medium', color: 'text.primary' }}>
-            Upgrade to Magix Pro for:
-          </Typography>
-          <List dense sx={{ mb: 2.5, width: 'fit-content', margin: '0 auto', textAlign: 'left', // Center the list block
-            '& .MuiListItemIcon-root': { minWidth: '28px', fontSize: '1.1rem' }, // Smaller icons
-            '& .MuiListItemText-primary': { fontSize: '0.875rem' } // Smaller feature text
-          }}>
-            <ListItem disableGutters>
-              <ListItemIcon>✅</ListItemIcon>
-              <ListItemText primary="Unlimited website modifications" />
-            </ListItem>
-            <ListItem disableGutters>
-              <ListItemIcon>🚀</ListItemIcon>
-              <ListItemText primary="Access to all Pro features" />
-            </ListItem>
-            <ListItem disableGutters>
-              <ListItemIcon>🔮</ListItemIcon>
-              <ListItemText primary="Sneak peeks of upcoming features" />
-            </ListItem>
-          </List>
-          <DialogContentText variant="caption" sx={{ fontSize: '0.75rem' }}>
-            Your quota will reset on the 1st of next month.
+          
+          {/* Compact Features Box */}
+          <Box sx={{ textAlign: 'left', bgcolor: 'grey.50', p: 2, borderRadius: 2, mb: 2 }}>
+            <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600, fontSize: '0.85rem', color: 'text.primary' }}>
+              ✨ Magix Pro includes:
+            </Typography>
+            <Box sx={{ fontSize: '0.8rem', lineHeight: 1.4, color: 'text.secondary' }}>
+              <div>• Unlimited website modifications</div>
+              <div>• Access to all Pro features</div>
+              <div>• Early access to new features</div>
+            </Box>
+          </Box>
+          
+          <DialogContentText variant="caption" sx={{ fontSize: '0.75rem', color: 'text.secondary' }}>
+            Your quota resets on the 1st of next month.
           </DialogContentText>
         </DialogContent>
-        <DialogActions sx={{ p: 2, pt: 1, flexDirection: 'column', gap: 1.5 }}> {/* Stack buttons and add gap */}
+        <DialogActions sx={{ p: 2, pt: 0, flexDirection: 'column', gap: 1.5 }}>
           <Button 
             onClick={() => {
               window.open(`https://trymagix.lemonsqueezy.com/buy/18a60869-3b1a-4e71-a0f9-6ecd15b3b6d5?checkout[email]=${session?.user?.email}`, '_blank');
               setIsUpgradeModalOpen(false);
             }} 
             variant="contained" 
-            color="success"
-            size="large" // Make main CTA prominent
-            fullWidth // Make button full width
-            sx={{ borderRadius: 2, py: 1.25, fontSize: '0.95rem' }}
+            size="medium"
+            fullWidth
+            sx={{ 
+              borderRadius: 2,
+              py: 1, 
+              fontSize: '0.9rem',
+              fontWeight: 500,
+              bgcolor: '#4caf50',
+              color: 'white',
+              textTransform: 'none',
+              boxShadow: '0 2px 8px rgba(76,175,80,0.25)',
+              '&:hover': { 
+                bgcolor: '#45a049',
+                boxShadow: '0 4px 12px rgba(76,175,80,0.35)'
+              }
+            }}
           >
             Upgrade to Pro
           </Button>
           <Button 
             onClick={() => setIsUpgradeModalOpen(false)} 
-            color="inherit" 
-            size="small" // Smaller secondary action
-            sx={{ fontSize: '0.8rem', textTransform: 'none' }}
+            size="small"
+            sx={{ 
+              fontSize: '0.8rem', 
+              textTransform: 'none',
+              color: 'text.secondary',
+              minHeight: 'auto',
+              '&:hover': {
+                bgcolor: 'transparent',
+                color: 'text.primary'
+              }
+            }}
           >
             Maybe Later
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* UserScripts Not Available Modal */}
+      <Dialog 
+        open={isUserScriptsModalOpen} 
+        onClose={() => setIsUserScriptsModalOpen(false)}
+        PaperProps={{ 
+          sx: { 
+            borderRadius: 4,
+            p: 2.5,
+            minWidth: '280px',
+            maxWidth: '320px',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.12)',
+          } 
+        }}
+      >
+        <DialogTitle sx={{ textAlign: 'center', fontSize: '1.2rem', fontWeight: 600, pb: 1, px: 1 }}>
+          {"Enable User Scripts"}
+        </DialogTitle>
+        <DialogContent sx={{ textAlign: 'center', pt: 0, px: 1 }}>
+          <DialogContentText sx={{ mb: 2, fontSize: '0.85rem', color: 'text.secondary', lineHeight: 1.4 }}>
+            To use Magix, enable User Scripts for this extension.
+          </DialogContentText>
+          
+          {/* Compact Visual Instructions */}
+          <Box sx={{ textAlign: 'left', bgcolor: 'grey.50', p: 2, borderRadius: 2, mb: 2 }}>
+            <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600, fontSize: '0.85rem', color: 'text.primary' }}>
+              📍 Steps:
+            </Typography>
+            <Box sx={{ fontSize: '0.8rem', lineHeight: 1.3, color: 'text.secondary' }}>
+              <div>1. Find <strong>"Allow User Scripts"</strong></div>
+              <div>2. In <strong>"Extension options"</strong></div>
+              <div>3. Toggle it <strong>ON</strong></div>
+            </Box>
+            
+            {/* Compact Toggle Mockup */}
+            <Box sx={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: 1, 
+              mt: 1.5,
+              p: 1, 
+              bgcolor: 'white', 
+              border: '1px dashed', 
+              borderColor: 'grey.300',
+              borderRadius: 1,
+              fontSize: '0.75rem'
+            }}>
+              <span style={{ color: '#666' }}>Allow User Scripts</span>
+              <Box sx={{ 
+                width: 32, 
+                height: 18, 
+                bgcolor: '#4caf50', 
+                borderRadius: 2, 
+                position: 'relative',
+                flexShrink: 0
+              }}>
+                <Box sx={{ 
+                  width: 14, 
+                  height: 14, 
+                  bgcolor: 'white', 
+                  borderRadius: '50%', 
+                  position: 'absolute',
+                  top: 2,
+                  right: 2
+                }} />
+              </Box>
+              <span style={{ color: '#4caf50', fontWeight: 600 }}>← Enabled</span>
+            </Box>
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ p: 2, pt: 0, flexDirection: 'column', gap: 1.5 }}>
+          <Button 
+            onClick={() => {
+              chrome.tabs.create({ url: 'chrome://extensions/?id=cmplfnciodajepjlbbajfelkjgoncfdo' });
+            }} 
+            variant="contained" 
+            size="medium"
+            fullWidth
+            sx={{ 
+              borderRadius: 2,
+              py: 1, 
+              fontSize: '0.9rem',
+              fontWeight: 500,
+              bgcolor: 'common.black',
+              color: 'white',
+              textTransform: 'none',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+              '&:hover': { 
+                bgcolor: 'grey.800',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.2)'
+              }
+            }}
+          >
+            Open Magix Settings
+          </Button>
+          <Button 
+            onClick={() => setIsUserScriptsModalOpen(false)} 
+            size="small"
+            sx={{ 
+              fontSize: '0.8rem', 
+              textTransform: 'none',
+              color: 'text.secondary',
+              minHeight: 'auto',
+              '&:hover': {
+                bgcolor: 'transparent',
+                color: 'text.primary'
+              }
+            }}
+          >
+            Close
           </Button>
         </DialogActions>
       </Dialog>
@@ -1109,36 +1632,83 @@ function App() {
       {/* Confirmation Dialog */}
       <Dialog
         open={isConfirmDeleteDialogOpen}
-        onClose={handleCloseConfirmDialog} // Use the new handler
-        aria-labelledby="alert-dialog-title"
-        aria-describedby="alert-dialog-description"
+        onClose={handleCloseConfirmDialog}
+        PaperProps={{ 
+          sx: { 
+            borderRadius: 4,
+            p: 2.5,
+            minWidth: '280px',
+            maxWidth: '320px',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.12)',
+          } 
+        }}
       >
-        <DialogTitle id="alert-dialog-title">
+        <DialogTitle sx={{ textAlign: 'center', fontSize: '1.2rem', fontWeight: 600, pb: 1, px: 1 }}>
           {"Delete Modification"}
         </DialogTitle>
-        <DialogContent>
-          <DialogContentText id="alert-dialog-description">
+        <DialogContent sx={{ textAlign: 'center', pt: 0, px: 1 }}>
+          <DialogContentText sx={{ mb: 2, fontSize: '0.85rem', color: 'text.secondary', lineHeight: 1.4 }}>
             Are you sure you want to delete this modification?
           </DialogContentText>
-          <DialogContentText sx={{ mt: 2, fontWeight: 500, color: 'warning.main' }}>
-            ⚠️ Important: To completely remove this modification, make sure you're on the website where it was originally applied ({scriptPendingDeletion?.domain_pattern || 'the target site'}) before deleting.
-          </DialogContentText>
-          <DialogContentText sx={{ mt: 1, fontSize: '0.875rem', color: 'text.secondary' }}>
-            This will permanently remove the modification from your list. Any associated chat history will remain but will no longer be linked to this modification.
+          
+          {/* Important Notice Box */}
+          <Box sx={{ textAlign: 'left', bgcolor: 'orange.50', border: '1px solid', borderColor: 'orange.200', p: 2, borderRadius: 2, mb: 2 }}>
+            <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600, fontSize: '0.85rem', color: 'orange.800' }}>
+              📍 Important:
+            </Typography>
+            <Typography sx={{ fontSize: '0.8rem', lineHeight: 1.3, color: 'orange.700' }}>
+              Make sure you're on <strong>{scriptPendingDeletion?.domain_pattern || 'the target site'}</strong> to completely remove this modification.
+            </Typography>
+          </Box>
+          
+          <DialogContentText variant="caption" sx={{ fontSize: '0.75rem', color: 'text.secondary' }}>
+            This will permanently remove the modification from your list.
           </DialogContentText>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={handleCloseConfirmDialog} disabled={isLoading}>
-            Cancel
-          </Button>
+        <DialogActions sx={{ p: 2, pt: 0, flexDirection: 'column', gap: 1.5 }}>
           <Button 
             onClick={handleConfirmDeleteScript} 
-            autoFocus 
-            color="error"
+            variant="contained"
+            size="medium"
+            fullWidth
             disabled={isLoading}
             startIcon={isLoading ? <CircularProgress size={16} /> : null}
+            sx={{ 
+              borderRadius: 2,
+              py: 1, 
+              fontSize: '0.9rem',
+              fontWeight: 500,
+              bgcolor: '#f44336',
+              color: 'white',
+              textTransform: 'none',
+              boxShadow: '0 2px 8px rgba(244,67,54,0.25)',
+              '&:hover': { 
+                bgcolor: '#d32f2f',
+                boxShadow: '0 4px 12px rgba(244,67,54,0.35)'
+              },
+              '&:disabled': {
+                bgcolor: 'grey.400'
+              }
+            }}
           >
             {isLoading ? 'Deleting...' : 'Delete Modification'}
+          </Button>
+          <Button 
+            onClick={handleCloseConfirmDialog} 
+            size="small"
+            disabled={isLoading}
+            sx={{ 
+              fontSize: '0.8rem', 
+              textTransform: 'none',
+              color: 'text.secondary',
+              minHeight: 'auto',
+              '&:hover': {
+                bgcolor: 'transparent',
+                color: 'text.primary'
+              }
+            }}
+          >
+            Cancel
           </Button>
         </DialogActions>
       </Dialog>
