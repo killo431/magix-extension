@@ -31,6 +31,8 @@ import DialogActions from '@mui/material/DialogActions';
 import DialogContent from '@mui/material/DialogContent';
 import DialogContentText from '@mui/material/DialogContentText';
 import DialogTitle from '@mui/material/DialogTitle';
+import SearchIcon from '@mui/icons-material/Search';
+import PublicIcon from '@mui/icons-material/Public';
 
 // Add pulse animation styles
 const pulseKeyframes = `
@@ -105,6 +107,10 @@ function App() {
   const [currentChatId, setCurrentChatId] = useState(null);
   const [currentScriptContentForChat, setCurrentScriptContentForChat] = useState('');
   const [currentChatTitle, setCurrentChatTitle] = useState('');
+  const [currentScriptId, setCurrentScriptId] = useState(null);
+  const [currentScriptIsPublic, setCurrentScriptIsPublic] = useState(false);
+  const [currentScriptInstallCount, setCurrentScriptInstallCount] = useState(0);
+  const [currentScriptUsageCount, setCurrentScriptUsageCount] = useState(0);
 
   const [placeholderIndex, setPlaceholderIndex] = useState(0);
   const [subIndex, setSubIndex] = useState(0);
@@ -122,6 +128,16 @@ function App() {
 
   const [userProfile, setUserProfile] = useState(null);
   const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState(false); 
+
+  // Discover view state
+  const [discoverScripts, setDiscoverScripts] = useState([]);
+  const [isDiscoverLoading, setIsDiscoverLoading] = useState(false);
+  const [discoverError, setDiscoverError] = useState(null);
+
+  // Public toggle confirmation dialog state
+  const [isPublicConfirmOpen, setIsPublicConfirmOpen] = useState(false);
+  const [publicToggleScriptId, setPublicToggleScriptId] = useState(null);
+  const [publicToggleTargetValue, setPublicToggleTargetValue] = useState(false);
 
   // Function to check if UserScripts API is available
   const checkUserScriptsAvailability = () => {
@@ -164,6 +180,10 @@ function App() {
           setCurrentChatId(null);
           setCurrentScriptContentForChat('');
           setCurrentChatTitle('');
+          setCurrentScriptId(null);
+          setCurrentScriptIsPublic(false);
+          setCurrentScriptInstallCount(0);
+          setCurrentScriptUsageCount(0);
         }
       }
     );
@@ -314,6 +334,220 @@ function App() {
     loadChatData();
   }, [currentChatId, session?.user?.id]);
 
+  // When entering a chat, fetch its script_id and set
+  useEffect(() => {
+    if (!currentChatId) return;
+    (async () => {
+      try {
+        // First fetch the chat to get script_id
+        const { data: chatRow, error: chatErr } = await supabase
+          .from('chats')
+          .select('id, script_id, title')
+          .eq('id', currentChatId)
+          .single();
+        if (chatErr) throw chatErr;
+        const scriptId = chatRow?.script_id || null;
+        setCurrentScriptId(scriptId);
+
+        if (scriptId) {
+          // Then fetch the script details (robust even if FK relationship alias differs)
+          const { data: scriptRow, error: scriptErr } = await supabase
+            .from('scripts')
+            .select('is_public, install_count, usage_count')
+            .eq('id', scriptId)
+            .single();
+          if (scriptErr) throw scriptErr;
+          setCurrentScriptIsPublic(Boolean(scriptRow?.is_public));
+          setCurrentScriptInstallCount(Number(scriptRow?.install_count || 0));
+          setCurrentScriptUsageCount(Number(scriptRow?.usage_count || 0));
+        } else {
+          setCurrentScriptIsPublic(false);
+          setCurrentScriptInstallCount(0);
+          setCurrentScriptUsageCount(0);
+        }
+      } catch (e) {
+        console.warn('Could not fetch chat/script details:', e.message);
+      }
+    })();
+  }, [currentChatId]);
+
+  // Fetch public scripts for current site (Discover)
+  const fetchDiscoverScripts = async () => {
+    setIsDiscoverLoading(true);
+    setDiscoverError(null);
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      const hostname = tab?.url && !tab.url.startsWith('chrome://') ? new URL(tab.url).hostname : null;
+      if (!hostname) throw new Error('No active site to discover modifications for.');
+      const query = supabase
+        .from('scripts')
+        .select('id, user_id, title, domain_pattern, code, is_public, install_count, usage_count')
+        .eq('domain_pattern', hostname)
+        .eq('is_public', true)
+        .order('install_count', { ascending: false })
+        .limit(50);
+      const { data, error } = await query;
+      if (error) throw error;
+      setDiscoverScripts(data || []);
+    } catch (e) {
+      setDiscoverError(e.message);
+      setDiscoverScripts([]);
+    } finally {
+      setIsDiscoverLoading(false);
+    }
+  };
+
+  // Install (duplicate) and apply a public script
+  const installPublicScript = async (sourceScript) => {
+    if (!session?.user?.id) { handleSignIn(); return; }
+    setIsLoading(true); setError(null);
+    try {
+      const userId = session.user.id;
+      // 1) Duplicate into user's scripts
+      const { data: inserted, error: insertErr } = await supabase
+        .from('scripts')
+        .insert({
+          user_id: userId,
+          code: sourceScript.code,
+          title: sourceScript.title,
+          domain_pattern: sourceScript.domain_pattern,
+          source_script_id: sourceScript.id
+        })
+        .select('id')
+        .single();
+      if (insertErr) throw insertErr;
+      const newScriptId = inserted.id;
+
+      // 2) Increment install_count on source
+      await supabase.from('scripts')
+        .update({ install_count: (sourceScript.install_count || 0) + 1 })
+        .eq('id', sourceScript.id);
+
+      // 3) Apply/inject to current tab
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (!tab?.id) throw new Error('No active tab.');
+      const typeIsJs = ['function', 'const', 'let', 'var', 'document', 'window', '=>'].some(k => (sourceScript.code || '').includes(k));
+      if (typeIsJs) {
+        const cleanCode = (sourceScript.code || '').replace(/^```javascript\n/, '').replace(/\n```$/, '');
+        await new Promise((resolve) => {
+          chrome.runtime.sendMessage({
+            type: 'REGISTER_USER_SCRIPT',
+            scriptId: newScriptId,
+            code: cleanCode,
+            targetUrl: tab.url
+          }, (res) => {
+            resolve(res);
+          });
+        });
+        // Reload page to apply JS world registration deterministically
+        chrome.tabs.reload(tab.id);
+      } else {
+        await chrome.scripting.insertCSS({ target: { tabId: tab.id }, css: sourceScript.code || '' });
+        // Reload page to ensure consistent CSS application
+        chrome.tabs.reload(tab.id);
+      }
+
+      // 4) Increment usage_count on source
+      await supabase.from('scripts')
+        .update({ usage_count: (sourceScript.usage_count || 0) + 1 })
+        .eq('id', sourceScript.id);
+
+      // 5) Create chat for this installed script
+      const newChatTitle = sourceScript.title || 'Installed modification';
+      const { data: newChat, error: chatErr } = await supabase
+        .from('chats')
+        .insert({ user_id: userId, script_id: newScriptId, title: newChatTitle })
+        .select('id, title')
+        .single();
+      if (chatErr) throw chatErr;
+      setCurrentChatId(newChat.id);
+      setCurrentChatTitle(newChat.title);
+      setCurrentScriptContentForChat(sourceScript.code || '');
+      setCurrentView('chat');
+
+    } catch (e) {
+      console.error('Install failed:', e);
+      setError(`Install failed: ${e.message}`);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Refresh stats for current script
+  const refreshCurrentScriptStats = async () => {
+    if (!currentScriptId) return;
+    try {
+      const { data, error } = await supabase
+        .from('scripts')
+        .select('is_public, install_count, usage_count')
+        .eq('id', currentScriptId)
+        .single();
+      if (error) throw error;
+      setCurrentScriptIsPublic(Boolean(data?.is_public));
+      setCurrentScriptInstallCount(Number(data?.install_count || 0));
+      setCurrentScriptUsageCount(Number(data?.usage_count || 0));
+    } catch (e) {
+      console.warn('Failed to refresh script stats:', e.message);
+    }
+  };
+
+  // Toggle public status for current chat's script
+  const requestTogglePublic = async () => {
+    if (!currentScriptId) { setIsPublicConfirmOpen(false); return; }
+    try {
+      await supabase.from('scripts')
+        .update({ is_public: publicToggleTargetValue })
+        .eq('id', currentScriptId)
+        .eq('user_id', session?.user?.id || '');
+      setIsPublicConfirmOpen(false);
+      setCurrentScriptIsPublic(publicToggleTargetValue);
+      // Feedback message
+      setMessages(prev => [...prev, { id: `sys-${Date.now()}`, sender: 'magix', text: publicToggleTargetValue ? 'Your modification is now public.' : 'Your modification is now private.', chat_id: currentChatId }]);
+      await refreshCurrentScriptStats();
+    } catch (e) {
+      setIsPublicConfirmOpen(false);
+      setError(`Failed to update public status: ${e.message}`);
+    }
+  };
+
+  // Discover screen renderer
+  const renderDiscoverScreen = () => (
+    <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+        <IconButton onClick={() => setCurrentView('home')} size="small" sx={{ mr: 1, borderRadius: 2, '&:hover': { bgcolor: 'grey.50' } }}>
+          <ArrowBackIcon sx={{ fontSize: '1.1rem', color: 'grey.500' }} />
+        </IconButton>
+        <Typography variant="subtitle1" sx={{ fontSize: '0.9rem', fontWeight: 500 }}>Discover Modifications</Typography>
+      </Box>
+      {isDiscoverLoading ? (
+        <Typography variant="body2" sx={{ color: 'text.secondary' }}>Loading...</Typography>
+      ) : discoverError ? (
+        <Typography variant="body2" sx={{ color: 'error.main' }}>{discoverError}</Typography>
+      ) : (
+        <List dense sx={{ pt: 0, maxHeight: '100%', overflowY: 'auto' }}>
+          {discoverScripts.length === 0 ? (
+            <Typography variant="caption" sx={{ color: 'grey.500' }}>No public modifications found for this site yet.</Typography>
+          ) : (
+            discoverScripts.map((s) => (
+              <ListItemButton key={s.id} sx={{ border: '1px solid #e0e0e0', borderRadius: 4, mb: 1, py: 0.5 }} onClick={() => installPublicScript(s)}>
+                <ListItemText 
+                  primary={s.title}
+                  secondary={s.domain_pattern}
+                  primaryTypographyProps={{ sx: { fontSize: '0.9rem' } }}
+                  secondaryTypographyProps={{ sx: { fontSize: '0.75rem', color: 'grey.600' } }}
+                />
+                <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', mr: 1 }}>
+                  <Chip size="small" label={`Installs: ${s.install_count || 0}`} />
+                  <Chip size="small" label={`Usage: ${s.usage_count || 0}`} />
+                </Box>
+                <Button variant="contained" size="small" sx={{ textTransform: 'none', borderRadius: 2 }}>Install</Button>
+              </ListItemButton>
+            ))
+          )}
+        </List>
+      )}
+    </Box>
+  );
 
   useEffect(() => {
     const messageListener = (message, sender, sendResponse) => {
@@ -983,8 +1217,7 @@ function App() {
           mb: 2, 
           fontSize: '1rem', 
           fontWeight: 600,
-          fontFamily: '"Instrument Serif", serif',
-          fontStyle: 'italic'
+          fontFamily: '"Instrument Serif", serif'
         }}>
           Modify Any Website
         </Typography>
@@ -1038,7 +1271,20 @@ function App() {
       <Box sx={{ position: 'sticky', top: 0, zIndex: 1, bgcolor: 'background.paper', p: 1, mb: 1, display: 'flex', alignItems: 'center' }}>
          <IconButton onClick={() => { setCurrentChatId(null); /* useEffect will handle view change */ }} size="small" sx={{ mr: 1, borderRadius: 2, '&:hover': { bgcolor: 'grey.50' } }}><ArrowBackIcon sx={{ fontSize: '1.1rem', color: 'grey.500' }} /></IconButton>
          <Typography variant="subtitle1" sx={{ flexGrow: 1, textAlign: 'center', fontWeight: 400, fontSize: '0.85rem', color: 'grey.500', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{currentChatTitle || "Chat"}</Typography>
-         <Box sx={{ width: 40 }} />
+         <IconButton
+           size="small"
+           disabled={!currentScriptId}
+           onClick={async () => {
+             await refreshCurrentScriptStats();
+             // If private, set target true; if public, target false
+             setPublicToggleTargetValue(!currentScriptIsPublic);
+             setIsPublicConfirmOpen(true);
+           }}
+           sx={{ ml: 1, borderRadius: 2, '&:hover': { bgcolor: 'grey.50' } }}
+           title={!currentScriptId ? 'Create a modification first to share publicly' : (currentScriptIsPublic ? 'Public (click for details)' : 'Make Public')}
+         >
+           <PublicIcon sx={{ fontSize: '1.1rem', color: currentScriptIsPublic ? 'success.main' : 'grey.500' }} />
+         </IconButton>
       </Box>
       <Box ref={chatContainerRef} sx={{ flexGrow: 1, overflowY: 'auto', p: 2, display: 'flex', flexDirection: 'column', gap: 1 }}>
         {messages.map((msg) => (
@@ -1381,57 +1627,106 @@ function App() {
     </Box>
   );
 
+  // Public toggle confirmation dialog
+  const handlePublicToggle = () => {
+    setIsPublicConfirmOpen(true);
+    setPublicToggleTargetValue(!publicToggleTargetValue);
+  };
+
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh', bgcolor: 'background.paper', justifyContent: currentView === 'home' && !session ? 'center' : 'flex-start' }}>
-      {session && currentView !== 'settings' && currentView !== 'chat' && (
+      {session && currentView === 'home' && (
         <IconButton onClick={handleAccountMenuOpen} size="small" sx={{ position: 'absolute', top: 16, left: 16, zIndex: 2 }}>
            <AccountCircleIcon sx={{ color: 'grey.400', fontSize: '1.4rem' }} />
         </IconButton>
       )}
-       <Popover id={accountMenuId} open={openAccountMenu} anchorEl={accountMenuAnchorEl} onClose={handleAccountMenuClose} anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }} transformOrigin={{ vertical: 'top', horizontal: 'left'}} slotProps={{ paper: { sx: { width: '220px', mt: 1, borderRadius: 4, boxShadow: '0 8px 32px rgba(0,0,0,0.12)', border: '1px solid rgba(0,0,0,0.04)' } } }} >
-          <List dense sx={{ py: 1 }}>
-            <ListItem sx={{ px: 2, py: 1 }}>
-              <ListItemText 
-                primary="Monthly Requests" 
-                secondary={
-                  userProfile ? (
-                    userProfile.is_pro ? "Unlimited" : 
-                    (userProfile.request_count !== undefined ? `${10 - userProfile.request_count} / 10 used` : "Loading...")
-                  ) : "Loading..."
-                } 
-                primaryTypographyProps={{ 
-                  sx: { fontSize: '0.8rem', fontWeight: 500, color: 'text.primary' }
-                }}
-                secondaryTypographyProps={{ 
-                  sx: { fontSize: '0.75rem', color: 'grey.500', mt: 0.25 }
-                }}
-              />
-            </ListItem>
-            {currentView === 'chat' ? (
-              <ListItemButton onClick={() => { setCurrentView('home'); setCurrentChatId(null); setMessages([]); setCurrentScriptContentForChat(''); setCurrentChatTitle(''); handleAccountMenuClose(); }} sx={{ mx: 1, borderRadius: 2, py: 1, '&:hover': { bgcolor: 'grey.50' } }}>
-                <ListItemText primary="Go to dashboard" primaryTypographyProps={{ sx: { fontSize: '0.85rem', fontWeight: 400 } }} />
-              </ListItemButton>
-            ) : (
-              <ListItemButton onClick={() => { setCurrentView('settings'); handleAccountMenuClose(); }} sx={{ mx: 1, borderRadius: 2, py: 1, '&:hover': { bgcolor: 'grey.50' } }}>
-                <ListItemText primary="Account settings" primaryTypographyProps={{ sx: { fontSize: '0.85rem', fontWeight: 400 } }} />
-              </ListItemButton>
-            )}
-             {currentView === 'chat' && (
-                 <ListItemButton onClick={() => { setCurrentView('settings'); handleAccountMenuClose(); }} sx={{ mx: 1, borderRadius: 2, py: 1, '&:hover': { bgcolor: 'grey.50' } }}>
-                    <ListItemText primary="Account settings" primaryTypographyProps={{ sx: { fontSize: '0.85rem', fontWeight: 400 } }} />
-                 </ListItemButton>
-             )}
-             {currentView !== 'chat' && (
-                 <ListItemButton onClick={() => { supabase.auth.signOut(); handleAccountMenuClose(); }} sx={{ mx: 1, borderRadius: 2, py: 1, '&:hover': { bgcolor: 'grey.50' } }}>
-                   <ListItemText primary="Log out" primaryTypographyProps={{ sx: { fontSize: '0.85rem', fontWeight: 400 } }} />
-                 </ListItemButton>
-             )}
-          </List>
-        </Popover>
+      {currentView === 'home' && (
+        <IconButton onClick={() => { setCurrentView('discover'); fetchDiscoverScripts(); }} size="small" sx={{ position: 'absolute', top: 16, right: 16, zIndex: 2 }}>
+          <SearchIcon sx={{ color: 'grey.400', fontSize: '1.4rem' }} />
+        </IconButton>
+      )}
+      <Popover id={accountMenuId} open={openAccountMenu} anchorEl={accountMenuAnchorEl} onClose={handleAccountMenuClose} anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }} transformOrigin={{ vertical: 'top', horizontal: 'left'}} slotProps={{ paper: { sx: { width: '220px', mt: 1, borderRadius: 4, boxShadow: '0 8px 32px rgba(0,0,0,0.12)', border: '1px solid rgba(0,0,0,0.04)' } } }} >
+        <List dense sx={{ py: 1 }}>
+          <ListItem sx={{ px: 2, py: 1 }}>
+            <ListItemText 
+              primary="Monthly Requests" 
+              secondary={
+                userProfile ? (
+                  userProfile.is_pro ? "Unlimited" : 
+                  (userProfile.request_count !== undefined ? `${10 - userProfile.request_count} / 10 used` : "Loading...")
+                ) : "Loading..."
+              } 
+              primaryTypographyProps={{ 
+                sx: { fontSize: '0.8rem', fontWeight: 500, color: 'text.primary' }
+              }}
+              secondaryTypographyProps={{ 
+                sx: { fontSize: '0.75rem', color: 'grey.500', mt: 0.25 }
+              }}
+            />
+          </ListItem>
+          {currentView === 'chat' ? (
+            <ListItemButton onClick={() => { setCurrentView('home'); setCurrentChatId(null); setMessages([]); setCurrentScriptContentForChat(''); setCurrentChatTitle(''); handleAccountMenuClose(); }} sx={{ mx: 1, borderRadius: 2, py: 1, '&:hover': { bgcolor: 'grey.50' } }}>
+              <ListItemText primary="Go to dashboard" primaryTypographyProps={{ sx: { fontSize: '0.85rem', fontWeight: 400 } }} />
+            </ListItemButton>
+          ) : (
+            <ListItemButton onClick={() => { setCurrentView('settings'); handleAccountMenuClose(); }} sx={{ mx: 1, borderRadius: 2, py: 1, '&:hover': { bgcolor: 'grey.50' } }}>
+              <ListItemText primary="Account settings" primaryTypographyProps={{ sx: { fontSize: '0.85rem', fontWeight: 400 } }} />
+            </ListItemButton>
+          )}
+           {currentView === 'chat' && (
+               <ListItemButton onClick={() => { setCurrentView('settings'); handleAccountMenuClose(); }} sx={{ mx: 1, borderRadius: 2, py: 1, '&:hover': { bgcolor: 'grey.50' } }}>
+                  <ListItemText primary="Account settings" primaryTypographyProps={{ sx: { fontSize: '0.85rem', fontWeight: 400 } }} />
+               </ListItemButton>
+           )}
+           {currentView !== 'chat' && (
+               <ListItemButton onClick={() => { supabase.auth.signOut(); handleAccountMenuClose(); }} sx={{ mx: 1, borderRadius: 2, py: 1, '&:hover': { bgcolor: 'grey.50' } }}>
+                 <ListItemText primary="Log out" primaryTypographyProps={{ sx: { fontSize: '0.85rem', fontWeight: 400 } }} />
+               </ListItemButton>
+           )}
+        </List>
+      </Popover>
 
       {currentView === 'chat' ? renderChatScreen()
        : currentView === 'settings' ? renderAccountSettingsScreen()
+       : currentView === 'discover' ? renderDiscoverScreen()
        : renderHomeScreen()}
+
+      {/* Public toggle confirmation dialog */}
+      <Dialog 
+        open={isPublicConfirmOpen} 
+        onClose={() => setIsPublicConfirmOpen(false)}
+        PaperProps={{ sx: { borderRadius: 4, p: 2.5, minWidth: '280px', maxWidth: '320px', boxShadow: '0 8px 32px rgba(0,0,0,0.12)' } }}
+      >
+        <DialogTitle sx={{ textAlign: 'center', fontSize: '1.1rem', fontWeight: 600, pb: 1 }}>
+          {currentScriptIsPublic ? 'Public Modification' : 'Make Public?'}
+        </DialogTitle>
+        <DialogContent sx={{ pt: 0 }}>
+          {currentScriptIsPublic ? (
+            <>
+              <DialogContentText sx={{ fontSize: '0.85rem', color: 'text.secondary', mb: 1 }}>
+                This modification is public. Stats:
+              </DialogContentText>
+              <Box sx={{ display: 'flex', gap: 1, mb: 1 }}>
+                <Chip size="small" label={`Installs: ${currentScriptInstallCount}`} />
+                <Chip size="small" label={`Usage: ${currentScriptUsageCount}`} />
+              </Box>
+              <DialogContentText sx={{ fontSize: '0.8rem', color: 'text.secondary' }}>
+                You can make it private again. It will be removed from Discover.
+              </DialogContentText>
+            </>
+          ) : (
+            <DialogContentText sx={{ fontSize: '0.85rem', color: 'text.secondary' }}>
+              This modification will be visible to others on this site in Discover.
+            </DialogContentText>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ pt: 0, flexDirection: 'column', gap: 1.5, p: 2 }}>
+          <Button onClick={() => setIsPublicConfirmOpen(false)} size="small" sx={{ textTransform: 'none', fontSize: '0.85rem', color: 'text.secondary' }}>Close</Button>
+          <Button onClick={requestTogglePublic} size="medium" autoFocus variant="contained" sx={{ textTransform: 'none', borderRadius: 2 }}>
+            {currentScriptIsPublic ? 'Make Private' : 'Make Public'}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Upgrade Modal */}
       <Dialog 
