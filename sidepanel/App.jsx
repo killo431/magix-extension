@@ -465,6 +465,17 @@ function App() {
       setCurrentScriptContentForChat(sourceScript.code || '');
       setCurrentView('chat');
 
+      // 6) Persist a success message and show it in UI
+      const successText = 'This modification was installed from Discover and applied successfully.';
+      const { error: successMsgErr } = await supabase
+        .from('chat_messages')
+        .insert({ chat_id: newChat.id, user_id: userId, sender_type: 'ai', content: successText });
+      if (successMsgErr) {
+        console.warn('Could not save success message:', successMsgErr.message);
+      } else {
+        setMessages(prev => [...prev, { id: `ai-${Date.now()}`, sender: 'magix', text: successText, chat_id: newChat.id }]);
+      }
+
     } catch (e) {
       console.error('Install failed:', e);
       setError(`Install failed: ${e.message}`);
