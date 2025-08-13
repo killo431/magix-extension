@@ -111,6 +111,7 @@ function App() {
   const [currentScriptIsPublic, setCurrentScriptIsPublic] = useState(false);
   const [currentScriptInstallCount, setCurrentScriptInstallCount] = useState(0);
   const [currentScriptUsageCount, setCurrentScriptUsageCount] = useState(0);
+  const [currentScriptTitle, setCurrentScriptTitle] = useState('');
 
   const [placeholderIndex, setPlaceholderIndex] = useState(0);
   const [subIndex, setSubIndex] = useState(0);
@@ -133,11 +134,14 @@ function App() {
   const [discoverScripts, setDiscoverScripts] = useState([]);
   const [isDiscoverLoading, setIsDiscoverLoading] = useState(false);
   const [discoverError, setDiscoverError] = useState(null);
+  const [discoverHostname, setDiscoverHostname] = useState('');
 
   // Public toggle confirmation dialog state
   const [isPublicConfirmOpen, setIsPublicConfirmOpen] = useState(false);
   const [publicToggleScriptId, setPublicToggleScriptId] = useState(null);
   const [publicToggleTargetValue, setPublicToggleTargetValue] = useState(false);
+  const [publicTitleInput, setPublicTitleInput] = useState('');
+  const PUBLIC_TITLE_MAX = 75;
 
   // Function to check if UserScripts API is available
   const checkUserScriptsAvailability = () => {
@@ -184,6 +188,7 @@ function App() {
           setCurrentScriptIsPublic(false);
           setCurrentScriptInstallCount(0);
           setCurrentScriptUsageCount(0);
+          setCurrentScriptTitle('');
         }
       }
     );
@@ -350,13 +355,14 @@ function App() {
         setCurrentScriptId(scriptId);
 
         if (scriptId) {
-          // Then fetch the script details (robust even if FK relationship alias differs)
+          // Then fetch the script details
           const { data: scriptRow, error: scriptErr } = await supabase
             .from('scripts')
-            .select('is_public, install_count, usage_count')
+            .select('title, is_public, install_count, usage_count')
             .eq('id', scriptId)
             .single();
           if (scriptErr) throw scriptErr;
+          setCurrentScriptTitle(scriptRow?.title || '');
           setCurrentScriptIsPublic(Boolean(scriptRow?.is_public));
           setCurrentScriptInstallCount(Number(scriptRow?.install_count || 0));
           setCurrentScriptUsageCount(Number(scriptRow?.usage_count || 0));
@@ -364,6 +370,7 @@ function App() {
           setCurrentScriptIsPublic(false);
           setCurrentScriptInstallCount(0);
           setCurrentScriptUsageCount(0);
+          setCurrentScriptTitle('');
         }
       } catch (e) {
         console.warn('Could not fetch chat/script details:', e.message);
@@ -379,9 +386,10 @@ function App() {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       const hostname = tab?.url && !tab.url.startsWith('chrome://') ? new URL(tab.url).hostname : null;
       if (!hostname) throw new Error('No active site to discover modifications for.');
+      setDiscoverHostname(hostname);
       const query = supabase
         .from('scripts')
-        .select('id, user_id, title, domain_pattern, code, is_public, install_count, usage_count')
+        .select('id, user_id, title, domain_pattern, code, is_public, install_count')
         .eq('domain_pattern', hostname)
         .eq('is_public', true)
         .order('install_count', { ascending: false })
@@ -490,10 +498,11 @@ function App() {
     try {
       const { data, error } = await supabase
         .from('scripts')
-        .select('is_public, install_count, usage_count')
+        .select('title, is_public, install_count, usage_count')
         .eq('id', currentScriptId)
         .single();
       if (error) throw error;
+      setCurrentScriptTitle(data?.title || '');
       setCurrentScriptIsPublic(Boolean(data?.is_public));
       setCurrentScriptInstallCount(Number(data?.install_count || 0));
       setCurrentScriptUsageCount(Number(data?.usage_count || 0));
@@ -506,12 +515,14 @@ function App() {
   const requestTogglePublic = async () => {
     if (!currentScriptId) { setIsPublicConfirmOpen(false); return; }
     try {
+      const trimmedTitle = (publicTitleInput || currentScriptTitle || currentChatTitle || '').slice(0, PUBLIC_TITLE_MAX);
       await supabase.from('scripts')
-        .update({ is_public: publicToggleTargetValue })
+        .update(publicToggleTargetValue ? { is_public: true, title: trimmedTitle } : { is_public: false })
         .eq('id', currentScriptId)
         .eq('user_id', session?.user?.id || '');
       setIsPublicConfirmOpen(false);
       setCurrentScriptIsPublic(publicToggleTargetValue);
+      if (publicToggleTargetValue) setCurrentScriptTitle(trimmedTitle);
       // Feedback message
       setMessages(prev => [...prev, { id: `sys-${Date.now()}`, sender: 'magix', text: publicToggleTargetValue ? 'Your modification is now public.' : 'Your modification is now private.', chat_id: currentChatId }]);
       await refreshCurrentScriptStats();
@@ -528,34 +539,37 @@ function App() {
         <IconButton onClick={() => setCurrentView('home')} size="small" sx={{ mr: 1, borderRadius: 2, '&:hover': { bgcolor: 'grey.50' } }}>
           <ArrowBackIcon sx={{ fontSize: '1.1rem', color: 'grey.500' }} />
         </IconButton>
-        <Typography variant="subtitle1" sx={{ fontSize: '0.9rem', fontWeight: 500 }}>Discover Modifications</Typography>
+        <Typography variant="subtitle1" sx={{ fontSize: '0.9rem', fontWeight: 500 }}>Discover Modifications{discoverHostname ? ` (${discoverHostname})` : ''}</Typography>
       </Box>
       {isDiscoverLoading ? (
         <Typography variant="body2" sx={{ color: 'text.secondary' }}>Loading...</Typography>
       ) : discoverError ? (
         <Typography variant="body2" sx={{ color: 'error.main' }}>{discoverError}</Typography>
       ) : (
-        <List dense sx={{ pt: 0, maxHeight: '100%', overflowY: 'auto' }}>
+        <Box sx={{ pt: 0, maxHeight: '100%', overflowY: 'auto' }}>
           {discoverScripts.length === 0 ? (
             <Typography variant="caption" sx={{ color: 'grey.500' }}>No public modifications found for this site yet.</Typography>
           ) : (
             discoverScripts.map((s) => (
-              <ListItemButton key={s.id} sx={{ border: '1px solid #e0e0e0', borderRadius: 4, mb: 1, py: 0.5 }} onClick={() => installPublicScript(s)}>
-                <ListItemText 
-                  primary={s.title}
-                  secondary={s.domain_pattern}
-                  primaryTypographyProps={{ sx: { fontSize: '0.9rem' } }}
-                  secondaryTypographyProps={{ sx: { fontSize: '0.75rem', color: 'grey.600' } }}
-                />
-                <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', mr: 1 }}>
-                  <Chip size="small" label={`Installs: ${s.install_count || 0}`} />
-                  <Chip size="small" label={`Usage: ${s.usage_count || 0}`} />
+              <Paper key={s.id} elevation={0} variant="outlined" sx={{ borderRadius: 4, p: 1.5, mb: 1.5, borderColor: '#e0e0e0' }}>
+                <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
+                  <Box sx={{ flexGrow: 1 }}>
+                    <Typography variant="body1" sx={{ fontSize: '0.95rem', lineHeight: 1.3, mb: 1, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                      {s.title}
+                    </Typography>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <Chip size="small" label={`Installs: ${s.install_count || 0}`} sx={{ bgcolor: 'grey.100' }} />
+                    </Box>
+                    <Typography variant="caption" sx={{ mt: 1, display: 'block', color: 'grey.600' }}>{s.domain_pattern}</Typography>
+                  </Box>
+                  <Button onClick={() => installPublicScript(s)} variant="contained" size="small" sx={{ textTransform: 'none', borderRadius: 2 }}>
+                    Install
+                  </Button>
                 </Box>
-                <Button variant="contained" size="small" sx={{ textTransform: 'none', borderRadius: 2 }}>Install</Button>
-              </ListItemButton>
+              </Paper>
             ))
           )}
-        </List>
+        </Box>
       )}
     </Box>
   );
@@ -936,7 +950,7 @@ function App() {
         const scriptId = chat.script_id; // Get the existing script ID
         const { error: updateErr } = await supabase
           .from('scripts')
-          .update({ code, title: promptText.substring(0, 50) + (promptText.length > 50 ? '...' : '') })
+          .update({ code })
           .eq('id', scriptId)
           .eq('user_id', userId); // Ensure user owns the script
 
@@ -1289,6 +1303,7 @@ function App() {
              await refreshCurrentScriptStats();
              // If private, set target true; if public, target false
              setPublicToggleTargetValue(!currentScriptIsPublic);
+             setPublicTitleInput(currentScriptTitle || currentChatTitle || '');
              setIsPublicConfirmOpen(true);
            }}
            sx={{ ml: 1, borderRadius: 2, '&:hover': { bgcolor: 'grey.50' } }}
@@ -1706,7 +1721,7 @@ function App() {
       <Dialog 
         open={isPublicConfirmOpen} 
         onClose={() => setIsPublicConfirmOpen(false)}
-        PaperProps={{ sx: { borderRadius: 4, p: 2.5, minWidth: '280px', maxWidth: '320px', boxShadow: '0 8px 32px rgba(0,0,0,0.12)' } }}
+        PaperProps={{ sx: { borderRadius: 4, p: 2.5, minWidth: '280px', maxWidth: '360px', boxShadow: '0 8px 32px rgba(0,0,0,0.12)' } }}
       >
         <DialogTitle sx={{ textAlign: 'center', fontSize: '1.1rem', fontWeight: 600, pb: 1 }}>
           {currentScriptIsPublic ? 'Public Modification' : 'Make Public?'}
@@ -1719,16 +1734,26 @@ function App() {
               </DialogContentText>
               <Box sx={{ display: 'flex', gap: 1, mb: 1 }}>
                 <Chip size="small" label={`Installs: ${currentScriptInstallCount}`} />
-                <Chip size="small" label={`Usage: ${currentScriptUsageCount}`} />
               </Box>
               <DialogContentText sx={{ fontSize: '0.8rem', color: 'text.secondary' }}>
                 You can make it private again. It will be removed from Discover.
               </DialogContentText>
             </>
           ) : (
-            <DialogContentText sx={{ fontSize: '0.85rem', color: 'text.secondary' }}>
-              This modification will be visible to others on this site in Discover.
-            </DialogContentText>
+            <>
+              <DialogContentText sx={{ fontSize: '0.85rem', color: 'text.secondary', mb: 1 }}>
+                This modification will be visible to others on this site in Discover.
+              </DialogContentText>
+              <TextField
+                label="Title"
+                value={publicTitleInput}
+                onChange={(e) => setPublicTitleInput(e.target.value.slice(0, PUBLIC_TITLE_MAX))}
+                fullWidth
+                size="small"
+                sx={{ mt: 1, '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+                helperText={`${publicTitleInput.length}/${PUBLIC_TITLE_MAX}`}
+              />
+            </>
           )}
         </DialogContent>
         <DialogActions sx={{ pt: 0, flexDirection: 'column', gap: 1.5, p: 2 }}>
