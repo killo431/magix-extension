@@ -427,9 +427,17 @@ function App() {
       const newScriptId = inserted.id;
 
       // 2) Increment install_count on source
-      await supabase.from('scripts')
-        .update({ install_count: (sourceScript.install_count || 0) + 1 })
-        .eq('id', sourceScript.id);
+      {
+        const { error: incErr } = await supabase.from('scripts')
+          .update({ install_count: (sourceScript.install_count || 0) + 1 })
+          .eq('id', sourceScript.id);
+        if (incErr) {
+          console.warn('Could not increment install_count (check RLS/policy):', incErr.message);
+        } else {
+          // Optimistically bump local Discover list so user sees the change immediately
+          setDiscoverScripts(prev => prev.map(s => s.id === sourceScript.id ? { ...s, install_count: (s.install_count || 0) + 1 } : s));
+        }
+      }
 
       // 3) Apply/inject to current tab
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -456,9 +464,14 @@ function App() {
       }
 
       // 4) Increment usage_count on source
-      await supabase.from('scripts')
-        .update({ usage_count: (sourceScript.usage_count || 0) + 1 })
-        .eq('id', sourceScript.id);
+      {
+        const { error: useErr } = await supabase.from('scripts')
+          .update({ usage_count: (sourceScript.usage_count || 0) + 1 })
+          .eq('id', sourceScript.id);
+        if (useErr) {
+          console.warn('Could not increment usage_count (check RLS/policy):', useErr.message);
+        }
+      }
 
       // 5) Create chat for this installed script
       const newChatTitle = sourceScript.title || 'Installed modification';
@@ -551,18 +564,31 @@ function App() {
             <Typography variant="caption" sx={{ color: 'grey.500' }}>No public modifications found for this site yet.</Typography>
           ) : (
             discoverScripts.map((s) => (
-              <Paper key={s.id} elevation={0} variant="outlined" sx={{ borderRadius: 4, p: 1.5, mb: 1.5, borderColor: '#e0e0e0' }}>
+              <Paper key={s.id} elevation={0} variant="outlined" sx={{ borderRadius: 6, p: 1.5, mb: 1.5, borderColor: '#e0e0e0' }}>
                 <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
                   <Box sx={{ flexGrow: 1 }}>
-                    <Typography variant="body1" sx={{ fontSize: '0.95rem', lineHeight: 1.3, mb: 1, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                    <Typography variant="body1" sx={{ fontSize: '0.9rem', lineHeight: 1.3, mb: 1, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                       {s.title}
                     </Typography>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <Chip size="small" label={`Installs: ${s.install_count || 0}`} sx={{ bgcolor: 'grey.100' }} />
+                      <Chip size="small" label={`Installs: ${s.install_count || 0}`} sx={{ bgcolor: 'grey.100', '& .MuiChip-label': { fontSize: '0.7rem' } }} />
                     </Box>
-                    <Typography variant="caption" sx={{ mt: 1, display: 'block', color: 'grey.600' }}>{s.domain_pattern}</Typography>
+                    {/* domain removed since it's already in header */}
                   </Box>
-                  <Button onClick={() => installPublicScript(s)} variant="contained" size="small" sx={{ textTransform: 'none', borderRadius: 2 }}>
+                  <Button 
+                    onClick={() => installPublicScript(s)} 
+                    variant="contained" 
+                    size="small" 
+                    sx={{ 
+                      textTransform: 'none', 
+                      borderRadius: 50, 
+                      px: 2,
+                      py: 0.75,
+                      fontSize: '0.85rem',
+                      bgcolor: 'common.black',
+                      '&:hover': { bgcolor: 'grey.800' }
+                    }}
+                  >
                     Install
                   </Button>
                 </Box>
@@ -1376,7 +1402,7 @@ function App() {
 
        {/* Content Area */}
        <Box sx={{ flexGrow: 1, overflowY: 'auto' }}>
-         <TabPanel value={settingsTab} index={0}>
+       <TabPanel value={settingsTab} index={0}>
            <Box sx={{ p: 3 }}>
              {/* Account Info Section */}
              <Box sx={{ mb: 4 }}>
@@ -1428,7 +1454,7 @@ function App() {
                  >
                    Update
                  </Button>
-               </Box>
+         </Box>
 
                <TextField 
                  label="Email" 
@@ -1504,11 +1530,11 @@ function App() {
                    Contact Us
                  </Link>
                </Box>
-             </Box>
-           </Box>
-         </TabPanel>
+         </Box>
+        </Box>
+       </TabPanel>
 
-         <TabPanel value={settingsTab} index={1}>
+       <TabPanel value={settingsTab} index={1}>
            <Box sx={{ p: 3 }}>
              {/* Plan Status */}
              <Box sx={{ mb: 4 }}>
@@ -1522,8 +1548,8 @@ function App() {
                }}>
                  Current Plan
                </Typography>
-               
-               {userProfile?.is_pro ? (
+
+           {userProfile?.is_pro ? (
                  <Box sx={{ 
                    bgcolor: 'success.50', 
                    border: '1px solid', 
@@ -1580,13 +1606,13 @@ function App() {
                      color: 'text.secondary',
                      fontWeight: 400
                    }}>
-                     Monthly Requests: {userProfile?.request_count !== undefined ? `${10 - (userProfile.request_count || 0)} / 10 used` : 'Loading...'}
-                   </Typography>
+                 Monthly Requests: {userProfile?.request_count !== undefined ? `${10 - (userProfile.request_count || 0)} / 10 used` : 'Loading...'}
+               </Typography>
                    
-                   <LinearProgress 
-                     variant="determinate" 
-                     value={userProfile?.request_count !== undefined ? ((10 - (userProfile.request_count || 0)) / 10) * 100 : 0} 
-                     color={userProfile?.request_count !== undefined && (10 - userProfile.request_count) >= 8 ? 'error' : (10 - userProfile.request_count) >= 5 ? 'warning' : 'success'} 
+               <LinearProgress 
+                 variant="determinate" 
+                 value={userProfile?.request_count !== undefined ? ((10 - (userProfile.request_count || 0)) / 10) * 100 : 0} 
+                 color={userProfile?.request_count !== undefined && (10 - userProfile.request_count) >= 8 ? 'error' : (10 - userProfile.request_count) >= 5 ? 'warning' : 'success'} 
                      sx={{ 
                        mb: 1.5, 
                        height: 6, 
@@ -1601,17 +1627,17 @@ function App() {
                      fontWeight: 400
                    }}>
                      Your free requests will reset on the 1st of next month (UTC)
-                   </Typography>
+               </Typography>
                  </Box>
-               )}
-
+           )}
+          
                {/* Action Button */}
-               {userProfile?.is_pro ? (
-                 <Button 
-                   variant="contained" 
+           {userProfile?.is_pro ? (
+             <Button 
+               variant="contained" 
                    size="medium"
                    fullWidth
-                   disableElevation 
+               disableElevation 
                    sx={{ 
                      textTransform: 'none', 
                      borderRadius: 3,
@@ -1621,17 +1647,17 @@ function App() {
                      py: 1.5,
                      '&:hover': { bgcolor: 'grey.800' } 
                    }}
-                   onClick={() => userProfile.customer_portal_url && window.open(userProfile.customer_portal_url, '_blank')}
-                   disabled={!userProfile.customer_portal_url}
-                 >
-                   Manage Billing
-                 </Button>
-               ) : (
-                 <Button 
-                   variant="contained" 
+               onClick={() => userProfile.customer_portal_url && window.open(userProfile.customer_portal_url, '_blank')}
+               disabled={!userProfile.customer_portal_url}
+             >
+               Manage Billing
+             </Button>
+           ) : (
+             <Button 
+               variant="contained" 
                    size="medium"
                    fullWidth
-                   disableElevation 
+               disableElevation 
                    sx={{ 
                      textTransform: 'none', 
                      borderRadius: 3,
@@ -1641,14 +1667,14 @@ function App() {
                      py: 1.5,
                      '&:hover': { bgcolor: '#45a049' } 
                    }}
-                   onClick={() => window.open(`https://trymagix.lemonsqueezy.com/buy/18a60869-3b1a-4e71-a0f9-6ecd15b3b6d5?checkout[email]=${session?.user?.email}`, '_blank')}
-                 >
-                   Upgrade to Pro
-                 </Button>
-               )}
+               onClick={() => window.open(`https://trymagix.lemonsqueezy.com/buy/18a60869-3b1a-4e71-a0f9-6ecd15b3b6d5?checkout[email]=${session?.user?.email}`, '_blank')}
+             >
+               Upgrade to Pro
+             </Button>
+           )}
              </Box>
-           </Box>
-         </TabPanel>
+        </Box>
+       </TabPanel>
        </Box>
     </Box>
   );
@@ -1674,43 +1700,43 @@ function App() {
       <Popover id={accountMenuId} open={openAccountMenu} anchorEl={accountMenuAnchorEl} onClose={handleAccountMenuClose} anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }} transformOrigin={{ vertical: 'top', horizontal: 'left'}} slotProps={{ paper: { sx: { width: '220px', mt: 1, borderRadius: 4, boxShadow: '0 8px 32px rgba(0,0,0,0.12)', border: '1px solid rgba(0,0,0,0.04)' } } }} >
         <List dense sx={{ py: 1 }}>
           <ListItem sx={{ px: 2, py: 1 }}>
-            <ListItemText 
+              <ListItemText 
               primary="Monthly Requests" 
-              secondary={
-                userProfile ? (
-                  userProfile.is_pro ? "Unlimited" : 
-                  (userProfile.request_count !== undefined ? `${10 - userProfile.request_count} / 10 used` : "Loading...")
-                ) : "Loading..."
-              } 
+                secondary={
+                  userProfile ? (
+                    userProfile.is_pro ? "Unlimited" : 
+                    (userProfile.request_count !== undefined ? `${10 - userProfile.request_count} / 10 used` : "Loading...")
+                  ) : "Loading..."
+                } 
               primaryTypographyProps={{ 
                 sx: { fontSize: '0.8rem', fontWeight: 500, color: 'text.primary' }
               }}
               secondaryTypographyProps={{ 
                 sx: { fontSize: '0.75rem', color: 'grey.500', mt: 0.25 }
               }}
-            />
-          </ListItem>
-          {currentView === 'chat' ? (
+              />
+            </ListItem>
+            {currentView === 'chat' ? (
             <ListItemButton onClick={() => { setCurrentView('home'); setCurrentChatId(null); setMessages([]); setCurrentScriptContentForChat(''); setCurrentChatTitle(''); handleAccountMenuClose(); }} sx={{ mx: 1, borderRadius: 2, py: 1, '&:hover': { bgcolor: 'grey.50' } }}>
               <ListItemText primary="Go to dashboard" primaryTypographyProps={{ sx: { fontSize: '0.85rem', fontWeight: 400 } }} />
-            </ListItemButton>
-          ) : (
+              </ListItemButton>
+            ) : (
             <ListItemButton onClick={() => { setCurrentView('settings'); handleAccountMenuClose(); }} sx={{ mx: 1, borderRadius: 2, py: 1, '&:hover': { bgcolor: 'grey.50' } }}>
               <ListItemText primary="Account settings" primaryTypographyProps={{ sx: { fontSize: '0.85rem', fontWeight: 400 } }} />
-            </ListItemButton>
-          )}
-           {currentView === 'chat' && (
+              </ListItemButton>
+            )}
+             {currentView === 'chat' && (
                <ListItemButton onClick={() => { setCurrentView('settings'); handleAccountMenuClose(); }} sx={{ mx: 1, borderRadius: 2, py: 1, '&:hover': { bgcolor: 'grey.50' } }}>
                   <ListItemText primary="Account settings" primaryTypographyProps={{ sx: { fontSize: '0.85rem', fontWeight: 400 } }} />
-               </ListItemButton>
-           )}
-           {currentView !== 'chat' && (
+                 </ListItemButton>
+             )}
+             {currentView !== 'chat' && (
                <ListItemButton onClick={() => { supabase.auth.signOut(); handleAccountMenuClose(); }} sx={{ mx: 1, borderRadius: 2, py: 1, '&:hover': { bgcolor: 'grey.50' } }}>
                  <ListItemText primary="Log out" primaryTypographyProps={{ sx: { fontSize: '0.85rem', fontWeight: 400 } }} />
-               </ListItemButton>
-           )}
-        </List>
-      </Popover>
+                 </ListItemButton>
+             )}
+          </List>
+        </Popover>
 
       {currentView === 'chat' ? renderChatScreen()
        : currentView === 'settings' ? renderAccountSettingsScreen()
@@ -1790,7 +1816,7 @@ function App() {
           <Box sx={{ textAlign: 'left', bgcolor: 'grey.50', p: 2, borderRadius: 2, mb: 2 }}>
             <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600, fontSize: '0.85rem', color: 'text.primary' }}>
               ✨ Magix Pro includes:
-            </Typography>
+          </Typography>
             <Box sx={{ fontSize: '0.8rem', lineHeight: 1.4, color: 'text.secondary' }}>
               <div>• Unlimited website modifications</div>
               <div>• Access to all Pro features</div>
