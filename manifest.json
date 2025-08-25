@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Magix",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Add any feature to any website.",
   "permissions": [
     "activeTab",
