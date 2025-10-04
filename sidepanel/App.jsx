@@ -35,6 +35,7 @@ import DialogTitle from '@mui/material/DialogTitle';
 import SearchIcon from '@mui/icons-material/Search';
 import PublicIcon from '@mui/icons-material/Public';
 import StarIcon from '@mui/icons-material/Star';
+import GitHubIcon from '@mui/icons-material/GitHub';
 import Select from '@mui/material/Select';
 import MenuItem from '@mui/material/MenuItem';
 import FormControl from '@mui/material/FormControl';
@@ -1246,7 +1247,8 @@ function App() {
           textAlign: 'center', 
           mb: 2, 
           fontSize: '1rem', 
-          fontWeight: 600,
+          fontWeight: 400,
+          color: 'grey.500',
           fontFamily: '"Instrument Serif", serif'
         }}>
           Modify Any Website
@@ -1475,7 +1477,7 @@ function App() {
                  alignItems: 'center',
                  gap: 2
                }}>
-                 <StarIcon sx={{ color: '#fbbf24', fontSize: '2rem' }} />
+                 <GitHubIcon sx={{ color: 'grey.800', fontSize: '2rem' }} />
                  <Box sx={{ flexGrow: 1 }}>
                    <Typography variant="body2" sx={{ 
                      fontSize: '0.85rem', 
