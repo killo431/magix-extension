@@ -1,24 +1,49 @@
 /* sidepanel/index.css */
 
 /* Import Inter font - requires internet connection */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
 
 /* Apply Inter font globally */
 body {
-  font-family: 'Inter', sans-serif !important; /* Use !important to potentially override MUI defaults if needed */
-  margin: 0; /* Remove default body margin */
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif !important;
+  margin: 0;
   height: 100vh;
-  overflow: hidden; /* Prevent body scroll */
+  overflow: hidden;
+  background: linear-gradient(135deg, #f5f7fa 0%, #fafbfc 100%);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 /* Ensure root takes full height */
 #root {
- height: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
-/* Remove default browser focus outline, MUI handles focus styling */
-*:focus {
-  outline: none;
+/* Custom scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.3);
+}
+
+/* Smooth focus outline with brand colors */
+*:focus-visible {
+  outline: 2px solid #667eea;
+  outline-offset: 2px;
 }
 
 /* Shimmer Effect */

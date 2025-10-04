@@ -1,23 +1,61 @@
-// background.js
+// background.js - Magix Extension Service Worker
+
+// Extension metadata
+const EXTENSION_VERSION = chrome.runtime.getManifest().version;
+const EXTENSION_NAME = 'Magix';
+
+console.log(`${EXTENSION_NAME} v${EXTENSION_VERSION} service worker initializing...`);
+
+// Error logging utility
+function logError(context, error, additionalInfo = {}) {
+  const errorDetails = {
+    context,
+    message: error?.message || 'Unknown error',
+    stack: error?.stack,
+    timestamp: new Date().toISOString(),
+    version: EXTENSION_VERSION,
+    ...additionalInfo
+  };
+  console.error(`[${EXTENSION_NAME}] Error in ${context}:`, errorDetails);
+  return errorDetails;
+}
 
 // Listener for the extension icon click
 chrome.action.onClicked.addListener((tab) => {
-  chrome.sidePanel.open({ windowId: tab.windowId });
+  try {
+    if (!tab?.windowId) {
+      throw new Error('Invalid tab or windowId');
+    }
+    chrome.sidePanel.open({ windowId: tab.windowId });
+    console.log(`Side panel opened for tab ${tab.id}`);
+  } catch (error) {
+    logError('action.onClicked', error, { tabId: tab?.id });
+  }
 });
 
-// Optional: Add a listener for when the extension is first installed or updated
-chrome.runtime.onInstalled.addListener(async () => { // Make listener async
-  console.log('Magix extension installed or updated.');
-  // Re-add world configuration for userScripts API
+// Installation and update handler
+chrome.runtime.onInstalled.addListener(async (details) => {
   try {
+    const { reason, previousVersion } = details;
+    
+    if (reason === 'install') {
+      console.log(`${EXTENSION_NAME} v${EXTENSION_VERSION} installed successfully!`);
+    } else if (reason === 'update') {
+      console.log(`${EXTENSION_NAME} updated from v${previousVersion} to v${EXTENSION_VERSION}`);
+    }
+    
+    // Configure userScripts API world
     if (chrome.userScripts && chrome.userScripts.configureWorld) {
       await chrome.userScripts.configureWorld({ messaging: true });
-      console.log('User script world configured successfully.');
+      console.log('User script world configured successfully with messaging enabled.');
     } else {
-      console.warn('chrome.userScripts.configureWorld API not available.');
+      console.warn('chrome.userScripts.configureWorld API not available. This extension requires Chrome 138+ or Developer Mode.');
     }
   } catch (error) {
-    console.error('Error configuring user script world:', error);
+    logError('runtime.onInstalled', error, { 
+      reason: details.reason, 
+      previousVersion: details.previousVersion 
+    });
   }
 });
 

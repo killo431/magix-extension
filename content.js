@@ -230,37 +230,40 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 // --- Floating Button Logic (Existing) ---
 
-// Create the Floating Button
+// Create the Floating Button with modern design
 const fab = document.createElement('button');
-fab.textContent = 'Magix 🪄'; // Updated text to "Magix"
+fab.textContent = 'Magix 🪄';
 fab.style.cssText = `
   position: fixed !important;
-  bottom: 20px !important;
-  right: 20px !important;
-  border-radius: 8px !important;
-  background-color: #ffffff !important;
-  color: #000000 !important;
+  bottom: 24px !important;
+  right: 24px !important;
+  border-radius: 12px !important;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+  color: #ffffff !important;
   font-size: 14px !important;
-  border: 1px solid #e0e0e0 !important;
-  padding: 6px 12px !important;
+  border: none !important;
+  padding: 10px 18px !important;
   cursor: pointer !important;
-  z-index: 999999 !important;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;
-  font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
-  font-weight: 500 !important;
-  line-height: 1.2 !important;
+  z-index: 2147483647 !important;
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4), 0 2px 4px rgba(0, 0, 0, 0.1) !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif !important;
+  font-weight: 600 !important;
+  line-height: 1.4 !important;
   text-align: center !important;
   white-space: nowrap !important;
   user-select: none !important;
   -webkit-user-select: none !important;
   -moz-user-select: none !important;
   -ms-user-select: none !important;
-  transition: none !important;
-  transform: none !important;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  transform: scale(1) !important;
   filter: none !important;
   opacity: 1 !important;
   visibility: visible !important;
-  display: block !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 6px !important;
   width: auto !important;
   height: auto !important;
   min-width: auto !important;
@@ -271,10 +274,42 @@ fab.style.cssText = `
   outline: none !important;
   text-decoration: none !important;
   text-transform: none !important;
-  letter-spacing: normal !important;
+  letter-spacing: 0.02em !important;
   word-spacing: normal !important;
+  backdrop-filter: blur(10px) !important;
+  -webkit-backdrop-filter: blur(10px) !important;
 `;
 fab.id = 'magix-fab';
+fab.setAttribute('aria-label', 'Open Magix Panel');
+fab.setAttribute('role', 'button');
+fab.setAttribute('tabindex', '0');
+
+// Add hover and active effects
+fab.addEventListener('mouseenter', () => {
+  if (!selectingModeActive) {
+    fab.style.transform = 'scale(1.05) translateY(-2px) !important';
+    fab.style.boxShadow = '0 6px 20px rgba(102, 126, 234, 0.5), 0 4px 8px rgba(0, 0, 0, 0.15) !important';
+  }
+});
+
+fab.addEventListener('mouseleave', () => {
+  if (!selectingModeActive) {
+    fab.style.transform = 'scale(1) !important';
+    fab.style.boxShadow = '0 4px 12px rgba(102, 126, 234, 0.4), 0 2px 4px rgba(0, 0, 0, 0.1) !important';
+  }
+});
+
+fab.addEventListener('mousedown', () => {
+  if (!selectingModeActive) {
+    fab.style.transform = 'scale(0.95) !important';
+  }
+});
+
+fab.addEventListener('mouseup', () => {
+  if (!selectingModeActive) {
+    fab.style.transform = 'scale(1.05) translateY(-2px) !important';
+  }
+});
 
 // Function to maintain FAB integrity - prevents tampering by user scripts
 function maintainFABIntegrity() {
@@ -286,37 +321,41 @@ function maintainFABIntegrity() {
     
     // Reset critical styles if changed
     const computedStyle = window.getComputedStyle(fab);
-    if (computedStyle.backgroundColor !== 'rgb(255, 255, 255)' || 
-        computedStyle.color !== 'rgb(0, 0, 0)' ||
-        computedStyle.position !== 'fixed') {
+    // Check if position or visibility is compromised
+    if (computedStyle.position !== 'fixed' || 
+        computedStyle.visibility !== 'visible' ||
+        parseFloat(computedStyle.opacity) < 0.9) {
       fab.style.cssText = `
         position: fixed !important;
-        bottom: 20px !important;
-        right: 20px !important;
-        border-radius: 8px !important;
-        background-color: #ffffff !important;
-        color: #000000 !important;
+        bottom: 24px !important;
+        right: 24px !important;
+        border-radius: 12px !important;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+        color: #ffffff !important;
         font-size: 14px !important;
-        border: 1px solid #e0e0e0 !important;
-        padding: 6px 12px !important;
+        border: none !important;
+        padding: 10px 18px !important;
         cursor: pointer !important;
-        z-index: 999999 !important;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;
-        font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
-        font-weight: 500 !important;
-        line-height: 1.2 !important;
+        z-index: 2147483647 !important;
+        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4), 0 2px 4px rgba(0, 0, 0, 0.1) !important;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif !important;
+        font-weight: 600 !important;
+        line-height: 1.4 !important;
         text-align: center !important;
         white-space: nowrap !important;
         user-select: none !important;
         -webkit-user-select: none !important;
         -moz-user-select: none !important;
         -ms-user-select: none !important;
-        transition: none !important;
-        transform: none !important;
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+        transform: scale(1) !important;
         filter: none !important;
         opacity: 1 !important;
         visibility: visible !important;
-        display: block !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        gap: 6px !important;
         width: auto !important;
         height: auto !important;
         min-width: auto !important;
@@ -327,8 +366,10 @@ function maintainFABIntegrity() {
         outline: none !important;
         text-decoration: none !important;
         text-transform: none !important;
-        letter-spacing: normal !important;
+        letter-spacing: 0.02em !important;
         word-spacing: normal !important;
+        backdrop-filter: blur(10px) !important;
+        -webkit-backdrop-filter: blur(10px) !important;
       `;
     }
   }
