@@ -238,14 +238,14 @@ fab.style.cssText = `
   bottom: 24px !important;
   right: 24px !important;
   border-radius: 12px !important;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
-  color: #ffffff !important;
+  background-color: #ffffff !important;
+  color: #000000 !important;
   font-size: 14px !important;
-  border: none !important;
+  border: 1px solid #e0e0e0 !important;
   padding: 10px 18px !important;
   cursor: pointer !important;
   z-index: 2147483647 !important;
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4), 0 2px 4px rgba(0, 0, 0, 0.1) !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1), 0 2px 4px rgba(0, 0, 0, 0.06) !important;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif !important;
   font-weight: 600 !important;
   line-height: 1.4 !important;
@@ -288,14 +288,14 @@ fab.setAttribute('tabindex', '0');
 fab.addEventListener('mouseenter', () => {
   if (!selectingModeActive) {
     fab.style.transform = 'scale(1.05) translateY(-2px) !important';
-    fab.style.boxShadow = '0 6px 20px rgba(102, 126, 234, 0.5), 0 4px 8px rgba(0, 0, 0, 0.15) !important';
+    fab.style.boxShadow = '0 6px 20px rgba(0, 0, 0, 0.15), 0 4px 8px rgba(0, 0, 0, 0.08) !important';
   }
 });
 
 fab.addEventListener('mouseleave', () => {
   if (!selectingModeActive) {
     fab.style.transform = 'scale(1) !important';
-    fab.style.boxShadow = '0 4px 12px rgba(102, 126, 234, 0.4), 0 2px 4px rgba(0, 0, 0, 0.1) !important';
+    fab.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.1), 0 2px 4px rgba(0, 0, 0, 0.06) !important';
   }
 });
 
@@ -330,14 +330,14 @@ function maintainFABIntegrity() {
         bottom: 24px !important;
         right: 24px !important;
         border-radius: 12px !important;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
-        color: #ffffff !important;
+        background-color: #ffffff !important;
+        color: #000000 !important;
         font-size: 14px !important;
-        border: none !important;
+        border: 1px solid #e0e0e0 !important;
         padding: 10px 18px !important;
         cursor: pointer !important;
         z-index: 2147483647 !important;
-        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4), 0 2px 4px rgba(0, 0, 0, 0.1) !important;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1), 0 2px 4px rgba(0, 0, 0, 0.06) !important;
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif !important;
         font-weight: 600 !important;
         line-height: 1.4 !important;

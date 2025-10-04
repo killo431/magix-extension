@@ -7,9 +7,9 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS"
 };
-// --- Gemini Configuration ---
+// --- Gemini Configuration (Updated Oct 4, 2025) ---
 const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
-const GEMINI_MODEL_NAME = "gemini-2.5-flash";
+const GEMINI_MODEL_NAME = "gemini-2.5-flash"; // Latest stable model
 const API_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL_NAME}:generateContent?key=${GEMINI_API_KEY}`;
 // --- System Prompt for Analysis (MODIFIED) ---
 const SYSTEM_PROMPT_ANALYZE = `

@@ -7,9 +7,9 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, GET, OPTIONS, PUT, DELETE'
 };
-// --- Claude 4 Configuration ---
+// --- Claude 4.5 Configuration (Updated Oct 4, 2025) ---
 const REPLICATE_API_TOKEN = Deno.env.get("REPLICATE_API_TOKEN");
-const API_ENDPOINT = "https://api.replicate.com/v1/models/anthropic/claude-4.5-sonnet/predictions";
+const API_ENDPOINT = "https://api.replicate.com/v1/models/anthropic/claude-4.5-sonnet/predictions"; // Latest Replicate model
 // --- Enhanced System Prompt for Advanced Code Generation ---
 const SYSTEM_PROMPT = `You are an elite web development AI embedded in a browser extension called Magix. Your mission is to generate production-quality, resilient JavaScript code that modifies live websites according to user requests. Generated code will be injected directly into web pages with strict security constraints.
 

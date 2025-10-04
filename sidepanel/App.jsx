@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../supabaseClient'; // Import the Supabase client
+import { analyzePrompt, generateScript, getAIConfig, saveAIConfig, AI_PROVIDERS, PROVIDER_MODELS } from './aiService'; // Import local AI service
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import TextField from '@mui/material/TextField';
@@ -33,6 +34,13 @@ import DialogContentText from '@mui/material/DialogContentText';
 import DialogTitle from '@mui/material/DialogTitle';
 import SearchIcon from '@mui/icons-material/Search';
 import PublicIcon from '@mui/icons-material/Public';
+import StarIcon from '@mui/icons-material/Star';
+import Select from '@mui/material/Select';
+import MenuItem from '@mui/material/MenuItem';
+import FormControl from '@mui/material/FormControl';
+import InputLabel from '@mui/material/InputLabel';
+import Checkbox from '@mui/material/Checkbox';
+import FormControlLabel from '@mui/material/FormControlLabel';
 
 // Add pulse animation styles
 const pulseKeyframes = `
@@ -99,6 +107,12 @@ function App() {
   const [accountMenuAnchorEl, setAccountMenuAnchorEl] = useState(null);
   const [settingsTab, setSettingsTab] = useState(0);
   const [userName, setUserName] = useState('');
+  const [aiProvider, setAiProvider] = useState(AI_PROVIDERS.GEMINI);
+  const [aiModel, setAiModel] = useState('gemini-2.5-pro-preview');
+  const [apiKey, setApiKey] = useState('');
+  const [useCustomModel, setUseCustomModel] = useState(false);
+  const [customModelName, setCustomModelName] = useState('');
+  const [apiKeySaveStatus, setApiKeySaveStatus] = useState('');
   const [userScripts, setUserScripts] = useState([]);
   const [activeScripts, setActiveScripts] = useState([]); // Scripts currently registered in browser
   const [isSelectingElement, setIsSelectingElement] = useState(false);
@@ -125,10 +139,7 @@ function App() {
 
   // State for UserScripts not available modal
   const [isUserScriptsModalOpen, setIsUserScriptsModalOpen] = useState(false);
-  const [userScriptsGuidance, setUserScriptsGuidance] = useState('');
-
-  const [userProfile, setUserProfile] = useState(null);
-  const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState(false); 
+  const [userScriptsGuidance, setUserScriptsGuidance] = useState(''); 
 
   // Discover view state
   const [discoverScripts, setDiscoverScripts] = useState([]);
@@ -249,35 +260,37 @@ function App() {
     return userScripts.filter(script => activeScriptIds.has(script.id));
   };
 
+  // Load AI config on mount
+  useEffect(() => {
+    const loadConfig = async () => {
+      try {
+        const config = await getAIConfig();
+        setAiProvider(config.provider);
+        setAiModel(config.model);
+        setApiKey(config.apiKey);
+        setUseCustomModel(config.useCustomModel || false);
+        setCustomModelName(config.customModelName || '');
+      } catch (error) {
+        console.error('Error loading AI config:', error);
+      }
+    };
+    loadConfig();
+  }, []);
+
   useEffect(() => {
     fetchUserScripts();
     fetchActiveScripts(); // Also fetch currently active scripts
-    const fetchUserProfileAndName = async () => {
-      if (session?.user?.id) {
-        // Fetch user profile from user_profiles table
-        const { data: profileData, error: profileError } = await supabase
-          .from('user_profiles')
-          .select('*')
-          .eq('id', session.user.id)
-          .single();
-        if (profileError) {
-          console.error("Error fetching user profile", profileError);
-        } else {
-          setUserProfile(profileData);
-        }
-
-        // Set user name from session metadata or email
-        if (session.user.user_metadata?.full_name) {
-          setUserName(session.user.user_metadata.full_name);
-        } else if (session.user.email) {
-          setUserName(session.user.email.split('@')[0]); // Fallback to part of email
-        }
-      } else {
-        setUserProfile(null);
-        setUserName(''); // Clear name if no session
+    
+    if (session?.user?.id) {
+      // Set user name from session metadata or email
+      if (session.user.user_metadata?.full_name) {
+        setUserName(session.user.user_metadata.full_name);
+      } else if (session.user.email) {
+        setUserName(session.user.email.split('@')[0]); // Fallback to part of email
       }
-    };
-    fetchUserProfileAndName();
+    } else {
+      setUserName(''); // Clear name if no session
+    }
   }, [session]);
 
   // Effect to load chat data when currentChatId changes
@@ -678,6 +691,28 @@ function App() {
   };
   const handleDeleteAccount = () => { /* console.log("Delete account clicked"); */ }
 
+  const handleSaveApiConfig = async () => {
+    setApiKeySaveStatus('saving');
+    setError(null);
+    try {
+      await saveAIConfig(aiProvider, aiModel, apiKey.trim(), useCustomModel, customModelName.trim());
+      setApiKeySaveStatus('success');
+      setTimeout(() => setApiKeySaveStatus(''), 3000);
+    } catch (e) {
+      console.error('Error saving AI config:', e);
+      setError(`Failed to save configuration: ${e.message}`);
+      setApiKeySaveStatus('error');
+      setTimeout(() => setApiKeySaveStatus(''), 3000);
+    }
+  };
+
+  const handleProviderChange = (newProvider) => {
+    setAiProvider(newProvider);
+    // Set default model for the new provider
+    const defaultModel = PROVIDER_MODELS[newProvider][0].id;
+    setAiModel(defaultModel);
+  };
+
   const handleSignIn = async () => {
     setError(null); setIsLoading(true);
     try {
@@ -713,6 +748,13 @@ function App() {
     const originalMessageText = inputValue.trim();
     if (!originalMessageText && !currentChatId) return;
 
+    // Check if API key is configured before proceeding
+    const config = await getAIConfig();
+    if (!config.apiKey || config.apiKey.trim() === '') {
+      setError('Please configure your API key in Settings → API Keys before using Magix.');
+      return;
+    }
+
     setIsLoading(true);
     setError(null);
     setInputValue('');
@@ -737,46 +779,7 @@ function App() {
         handleSignIn(); setIsLoading(false); return;
       }
 
-      // --- Monthly Quota Check and Reset ---
-      if (userProfile && !userProfile.is_pro) {
-        let currentRequestCount = userProfile.request_count;
-        const lastRequestDate = new Date(userProfile.last_request_at);
-        const now = new Date();
-        const currentMonthUTC = now.getUTCMonth();
-        const currentYearUTC = now.getUTCFullYear();
-        const lastRequestMonthUTC = lastRequestDate.getUTCMonth();
-        const lastRequestYearUTC = lastRequestDate.getUTCFullYear();
-
-        let profileNeedsUpdateForReset = false;
-        if (currentYearUTC > lastRequestYearUTC || (currentYearUTC === lastRequestYearUTC && currentMonthUTC > lastRequestMonthUTC)) {
-          console.log("Monthly quota reset for user:", userId);
-          currentRequestCount = 10; // Reset count
-          profileNeedsUpdateForReset = true; 
-        }
-
-        if (currentRequestCount <= 0) {
-          // setError("You've reached your monthly request limit (10 requests). Please upgrade to Pro for unlimited requests or wait until next month.");
-          setIsUpgradeModalOpen(true);
-          setIsLoading(false); return;
-        }
-        
-        // If reset happened, update DB and local state before proceeding
-        if (profileNeedsUpdateForReset) {
-          try {
-            const { error: updateError } = await supabase
-              .from('user_profiles')
-              .update({ request_count: 10, last_request_at: new Date().toISOString() })
-              .eq('id', userId);
-            if (updateError) throw updateError;
-            setUserProfile(prev => ({ ...prev, request_count: 10, last_request_at: new Date().toISOString() }));
-          } catch (e) {
-            console.error("Could not reset monthly request quota:", e);
-            setError("Could not reset your monthly request quota. Please try again.");
-            setIsLoading(false); return;
-          }
-        }
-      }
-      // --- End Quota Check ---
+      // No usage limits - users bring their own API keys!
 
       if (!activeChatId) {
         isNewChat = true;
@@ -804,8 +807,8 @@ function App() {
         setSelectedElementPath('');
       }
 
-      const { data: analysis, error: analysisErr } = await supabase.functions.invoke('analyze-prompt', { body: { prompt: promptForBackend, selected_element_selector: currentSelectedElemPath, existing_script_content: scriptContentForThisInteraction } });
-      if (analysisErr) throw new Error(`Analysis failed: ${analysisErr.message}`);
+      // Use local AI service instead of Supabase function
+      const analysis = await analyzePrompt(promptForBackend, currentSelectedElemPath, scriptContentForThisInteraction);
       if (!analysis || typeof analysis.response !== 'string' || typeof analysis.is_code_needed !== 'boolean') throw new Error("Unexpected analysis response.");
 
       const { error: aiMsgErr } = await supabase.from('chat_messages').insert({ chat_id: activeChatId, user_id: userId, sender_type: 'ai', content: analysis.response });
@@ -816,8 +819,8 @@ function App() {
         const procId = `proc-${Date.now()}`;
         setMessages(prev => [...prev, { id: procId, sender: 'magix', status: 'processing', chat_id: activeChatId }]);
         try {
-          const { data: script, error: scriptErr } = await supabase.functions.invoke('generate-script', { body: { prompt: promptForBackend, selected_element_selector: currentSelectedElemPath, existing_script_content: scriptContentForThisInteraction } });
-          if (scriptErr) throw new Error(`Code generation failed: ${scriptErr.message}`);
+          // Use local AI service instead of Supabase function
+          const script = await generateScript(promptForBackend, currentSelectedElemPath, scriptContentForThisInteraction);
           if (script?.generatedCode) {
             const newCode = script.generatedCode;
             setCurrentScriptContentForChat(newCode);
@@ -926,31 +929,7 @@ function App() {
         }
       }
 
-      // Decrement request count for non-pro user after successful interaction (defined as at least analysis call made)
-      if (userProfile && !userProfile.is_pro) {
-        try {
-          // Ensure we use the latest count if it was just reset
-          const countToDecrementFrom = userProfile.request_count === 10 && (new Date().getUTCMonth() !== new Date(userProfile.last_request_at).getUTCMonth() || new Date().getUTCFullYear() !== new Date(userProfile.last_request_at).getUTCFullYear()) 
-                                      ? 10 // If reset just happened (or would have), decrement from 10
-                                      : userProfile.request_count; // Otherwise, use current count
-
-          const newCount = Math.max(0, countToDecrementFrom - 1);
-
-          const { error: decrementError } = await supabase
-            .from('user_profiles')
-            .update({ 
-                request_count: newCount,
-                last_request_at: new Date().toISOString() 
-            })
-            .eq('id', userId);
-          if (decrementError) throw decrementError;
-          setUserProfile(prev => ({ ...prev, request_count: newCount, last_request_at: new Date().toISOString() }));
-          console.log(`Request count decremented for user ${userId}. New count: ${newCount}`);
-        } catch (e) {
-          console.error("Error decrementing request count:", e);
-          // Non-critical for the current interaction, but log it.
-        }
-      }
+      // No usage tracking needed - users manage their own API costs!
 
     } catch (e) {
       setError(`Error: ${e.message}`);
@@ -1396,7 +1375,7 @@ function App() {
            }}
          >
            <Tab label="Account Info" {...a11yProps(0)} />
-           <Tab label="Billing" {...a11yProps(1)} />
+           <Tab label="API Keys" {...a11yProps(1)} />
          </Tabs>
        </Box>
 
@@ -1474,6 +1453,70 @@ function App() {
                />
              </Box>
 
+             {/* Community Section */}
+             <Box sx={{ pt: 3, borderTop: '1px solid', borderColor: 'grey.100' }}>
+               <Typography variant="subtitle2" sx={{ 
+                 mb: 2, 
+                 fontSize: '0.75rem', 
+                 fontWeight: 500, 
+                 color: 'grey.500',
+                 textTransform: 'uppercase',
+                 letterSpacing: '0.5px'
+               }}>
+                 Community
+               </Typography>
+               <Box sx={{ 
+                 bgcolor: 'grey.50', 
+                 borderRadius: 3, 
+                 p: 2.5, 
+                 border: '1px solid', 
+                 borderColor: 'grey.200',
+                 display: 'flex',
+                 alignItems: 'center',
+                 gap: 2
+               }}>
+                 <StarIcon sx={{ color: '#fbbf24', fontSize: '2rem' }} />
+                 <Box sx={{ flexGrow: 1 }}>
+                   <Typography variant="body2" sx={{ 
+                     fontSize: '0.85rem', 
+                     fontWeight: 600, 
+                     color: 'grey.800',
+                     mb: 0.5
+                   }}>
+                     Star us on GitHub!
+                   </Typography>
+                   <Typography variant="caption" sx={{ 
+                     fontSize: '0.75rem', 
+                     color: 'grey.600',
+                     display: 'block'
+                   }}>
+                     Help us grow and improve Magix
+                   </Typography>
+                 </Box>
+                 <Button
+                   variant="outlined"
+                   size="small"
+                   startIcon={<StarIcon />}
+                   onClick={() => window.open('https://github.com/kchander/magix-extension', '_blank')}
+                   sx={{
+                     textTransform: 'none',
+                     borderRadius: 2,
+                     borderColor: 'grey.300',
+                     color: 'grey.700',
+                     fontSize: '0.75rem',
+                     fontWeight: 500,
+                     px: 2,
+                     '&:hover': {
+                       borderColor: 'grey.400',
+                       bgcolor: 'grey.100'
+                     }
+                   }}
+                 >
+                   Star
+                 </Button>
+               </Box>
+             </Box>
+
              {/* Footer Links */}
              <Box sx={{ pt: 3, borderTop: '1px solid', borderColor: 'grey.100' }}>
                <Typography variant="subtitle2" sx={{ 
@@ -1536,7 +1579,7 @@ function App() {
 
        <TabPanel value={settingsTab} index={1}>
            <Box sx={{ p: 3 }}>
-             {/* Plan Status */}
+             {/* API Keys Configuration */}
              <Box sx={{ mb: 4 }}>
                <Typography variant="subtitle2" sx={{ 
                  mb: 2, 
@@ -1546,136 +1589,176 @@ function App() {
                  textTransform: 'uppercase',
                  letterSpacing: '0.5px'
                }}>
-                 Current Plan
+                 AI Configuration
+               </Typography>
+               
+               <Typography variant="body2" sx={{ mb: 3, fontSize: '0.85rem', color: 'grey.600' }}>
+                 Choose your AI provider and model. Configure once and use the same model for both analysis and code generation.
                </Typography>
 
-           {userProfile?.is_pro ? (
-                 <Box sx={{ 
-                   bgcolor: 'success.50', 
-                   border: '1px solid', 
-                   borderColor: 'success.200',
-                   borderRadius: 3, 
-                   p: 2.5,
-                   mb: 3
-                 }}>
-                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                     <Chip 
-                       label="Pro User" 
-                       size="small" 
-                       sx={{ 
-                         bgcolor: 'success.main', 
-                         color: 'white', 
-                         fontWeight: 500,
-                         fontSize: '0.75rem'
-                       }} 
-                     />
-                   </Box>
-                   <Typography variant="body2" sx={{ 
-                     fontSize: '0.85rem',
-                     color: 'success.800',
-                     fontWeight: 400
-                   }}>
-                     You have unlimited requests!
-                   </Typography>
-                 </Box>
-               ) : (
-                 <Box sx={{ 
-                   bgcolor: 'grey.50', 
-                   border: '1px solid', 
-                   borderColor: 'grey.200',
-                   borderRadius: 3, 
-                   p: 2.5,
-                   mb: 3
-                 }}>
-                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-                     <Chip 
-                       label="Free Tier" 
-                       size="small" 
-                       sx={{ 
-                         bgcolor: 'grey.300', 
-                         color: 'grey.700',
-                         fontWeight: 500,
-                         fontSize: '0.75rem'
-                       }} 
-                     />
-                   </Box>
-                   
-                   <Typography variant="body2" sx={{ 
-                     mb: 1.5, 
-                     fontSize: '0.8rem',
-                     color: 'text.secondary',
-                     fontWeight: 400
-                   }}>
-                 Monthly Requests: {userProfile?.request_count !== undefined ? `${10 - (userProfile.request_count || 0)} / 10 used` : 'Loading...'}
-               </Typography>
-                   
-               <LinearProgress 
-                 variant="determinate" 
-                 value={userProfile?.request_count !== undefined ? ((10 - (userProfile.request_count || 0)) / 10) * 100 : 0} 
-                 color={userProfile?.request_count !== undefined && (10 - userProfile.request_count) >= 8 ? 'error' : (10 - userProfile.request_count) >= 5 ? 'warning' : 'success'} 
+               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+                 <FormControl fullWidth size="small">
+                   <InputLabel sx={{ fontSize: '0.85rem' }}>AI Provider</InputLabel>
+                   <Select
+                     value={aiProvider}
+                     label="AI Provider"
+                     onChange={(e) => handleProviderChange(e.target.value)}
                      sx={{ 
-                       mb: 1.5, 
-                       height: 6, 
-                       borderRadius: 3,
-                       bgcolor: 'grey.200'
-                     }} 
+                       fontSize: '0.85rem',
+                       '& .MuiOutlinedInput-notchedOutline': {
+                         borderRadius: 3
+                       }
+                     }}
+                   >
+                     <MenuItem value={AI_PROVIDERS.GEMINI}>Google Gemini</MenuItem>
+                     <MenuItem value={AI_PROVIDERS.ANTHROPIC}>Anthropic Claude (Official)</MenuItem>
+                     <MenuItem value={AI_PROVIDERS.OPENAI}>OpenAI GPT</MenuItem>
+                     <MenuItem value={AI_PROVIDERS.XAI}>xAI Grok</MenuItem>
+                     <MenuItem value={AI_PROVIDERS.OPENROUTER}>OpenRouter (Multi-Model)</MenuItem>
+                     <MenuItem value={AI_PROVIDERS.CLAUDE_REPLICATE}>Claude via Replicate (Legacy)</MenuItem>
+                   </Select>
+                 </FormControl>
+
+                 {!useCustomModel && (
+                   <FormControl fullWidth size="small">
+                     <InputLabel sx={{ fontSize: '0.85rem' }}>Model</InputLabel>
+                     <Select
+                       value={aiModel}
+                       label="Model"
+                       onChange={(e) => setAiModel(e.target.value)}
+                       sx={{ 
+                         fontSize: '0.85rem',
+                         '& .MuiOutlinedInput-notchedOutline': {
+                           borderRadius: 3
+                         }
+                       }}
+                     >
+                       {PROVIDER_MODELS[aiProvider] && PROVIDER_MODELS[aiProvider].map(model => (
+                         <MenuItem key={model.id} value={model.id}>{model.name}</MenuItem>
+                       ))}
+                     </Select>
+                   </FormControl>
+                 )}
+
+                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                   <FormControlLabel
+                     control={
+                       <Checkbox
+                         checked={useCustomModel}
+                         onChange={(e) => {
+                           setUseCustomModel(e.target.checked);
+                           if (!e.target.checked) setCustomModelName('');
+                         }}
+                         size="small"
+                         sx={{ py: 0 }}
+                       />
+                     }
+                     label={<Typography sx={{ fontSize: '0.8rem' }}>Use custom model name</Typography>}
                    />
-                   
-                   <Typography variant="caption" sx={{ 
-                     fontSize: '0.7rem', 
-                     color: 'grey.500',
-                     fontWeight: 400
-                   }}>
-                     Your free requests will reset on the 1st of next month (UTC)
-               </Typography>
                  </Box>
-           )}
-          
-               {/* Action Button */}
-           {userProfile?.is_pro ? (
-             <Button 
-               variant="contained" 
-                   size="medium"
-                   fullWidth
-               disableElevation 
-                   sx={{ 
-                     textTransform: 'none', 
-                     borderRadius: 3,
-                     bgcolor: 'common.black',
-                     fontSize: '0.85rem',
-                     fontWeight: 500,
-                     py: 1.5,
-                     '&:hover': { bgcolor: 'grey.800' } 
-                   }}
-               onClick={() => userProfile.customer_portal_url && window.open(userProfile.customer_portal_url, '_blank')}
-               disabled={!userProfile.customer_portal_url}
-             >
-               Manage Billing
-             </Button>
-           ) : (
-             <Button 
-               variant="contained" 
-                   size="medium"
-                   fullWidth
-               disableElevation 
-                   sx={{ 
-                     textTransform: 'none', 
-                     borderRadius: 3,
-                     bgcolor: '#4caf50',
-                     fontSize: '0.85rem',
-                     fontWeight: 500,
-                     py: 1.5,
-                     '&:hover': { bgcolor: '#45a049' } 
-                   }}
-               onClick={() => window.open(`https://trymagix.lemonsqueezy.com/buy/18a60869-3b1a-4e71-a0f9-6ecd15b3b6d5?checkout[email]=${session?.user?.email}`, '_blank')}
-             >
-               Upgrade to Pro
-             </Button>
-           )}
+
+                 {useCustomModel && (
+                   <TextField
+                     label="Custom Model Name"
+                     variant="outlined"
+                     size="small"
+                     fullWidth
+                     value={customModelName}
+                     onChange={(e) => setCustomModelName(e.target.value)}
+                     placeholder="e.g., gpt-4-turbo-preview, claude-3-opus-20240229"
+                     InputProps={{ sx: { fontSize: '0.85rem' } }}
+                     InputLabelProps={{ sx: { fontSize: '0.85rem' } }}
+                     sx={{
+                       '& .MuiOutlinedInput-root': {
+                         borderRadius: 3
+                       }
+                     }}
+                     helperText="Enter the exact model name compatible with your provider's API"
+                     FormHelperTextProps={{ sx: { fontSize: '0.7rem' } }}
+                   />
+                 )}
+
+                 <Box sx={{ display: 'flex', alignItems: 'flex-end', gap: 2 }}>
+                   <TextField 
+                     label="API Key" 
+                     variant="outlined" 
+                     size="small" 
+                     type="password"
+                     value={apiKey} 
+                     onChange={(e) => setApiKey(e.target.value)} 
+                     placeholder={`Enter your ${
+                       aiProvider === AI_PROVIDERS.GEMINI ? 'Gemini' :
+                       aiProvider === AI_PROVIDERS.ANTHROPIC ? 'Anthropic' :
+                       aiProvider === AI_PROVIDERS.OPENAI ? 'OpenAI' :
+                       aiProvider === AI_PROVIDERS.XAI ? 'xAI' :
+                       aiProvider === AI_PROVIDERS.OPENROUTER ? 'OpenRouter' :
+                       aiProvider === AI_PROVIDERS.CLAUDE_REPLICATE ? 'Replicate' : ''
+                     } API key`}
+                     InputProps={{ sx: { fontSize: '0.85rem' } }}
+                     InputLabelProps={{ sx: { fontSize: '0.85rem' } }}
+                     sx={{ 
+                       flexGrow: 1,
+                       '& .MuiOutlinedInput-root': { 
+                         borderRadius: 3,
+                         '&:hover .MuiOutlinedInput-notchedOutline': {
+                           borderColor: 'grey.400'
+                         }
+                       }
+                     }}
+                   />
+                   <Button 
+                     variant="contained" 
+                     size="small" 
+                     onClick={handleSaveApiConfig}
+                     disabled={apiKeySaveStatus === 'saving'}
+                     disableElevation 
+                     sx={{ 
+                       textTransform: 'none', 
+                       borderRadius: 3, 
+                       bgcolor: 'common.black',
+                       fontSize: '0.8rem',
+                       fontWeight: 500,
+                       px: 2,
+                       py: 1,
+                       '&:hover': { bgcolor: 'grey.800' } 
+                     }}
+                   >
+                     {apiKeySaveStatus === 'saving' ? 'Saving...' : apiKeySaveStatus === 'success' ? '✓ Saved' : 'Update'}
+                   </Button>
+                 </Box>
+
+                 {apiKeySaveStatus === 'success' && (
+                   <Typography variant="caption" sx={{ color: 'success.main', fontSize: '0.75rem', mt: -1 }}>
+                     Configuration saved successfully!
+                   </Typography>
+                 )}
+
+                 <Typography variant="caption" sx={{ color: 'grey.500', fontSize: '0.75rem', display: 'block', mt: -0.5 }}>
+                   {aiProvider === AI_PROVIDERS.GEMINI && (
+                     <>Get your API key from <Link href="https://makersuite.google.com/app/apikey" target="_blank" rel="noopener" sx={{ fontSize: '0.75rem' }}>Google AI Studio</Link></>
+                   )}
+                   {aiProvider === AI_PROVIDERS.ANTHROPIC && (
+                     <>Get your API key from <Link href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener" sx={{ fontSize: '0.75rem' }}>Anthropic Console</Link></>
+                   )}
+                   {aiProvider === AI_PROVIDERS.OPENAI && (
+                     <>Get your API key from <Link href="https://platform.openai.com/api-keys" target="_blank" rel="noopener" sx={{ fontSize: '0.75rem' }}>OpenAI Platform</Link></>
+                   )}
+                   {aiProvider === AI_PROVIDERS.XAI && (
+                     <>Get your API key from <Link href="https://console.x.ai/" target="_blank" rel="noopener" sx={{ fontSize: '0.75rem' }}>xAI Console</Link></>
+                   )}
+                   {aiProvider === AI_PROVIDERS.OPENROUTER && (
+                     <>Get your API key from <Link href="https://openrouter.ai/keys" target="_blank" rel="noopener" sx={{ fontSize: '0.75rem' }}>OpenRouter</Link></>
+                   )}
+                   {aiProvider === AI_PROVIDERS.CLAUDE_REPLICATE && (
+                     <>Get your API key from <Link href="https://replicate.com/account/api-tokens" target="_blank" rel="noopener" sx={{ fontSize: '0.75rem' }}>Replicate</Link></>
+                   )}
+                 </Typography>
+               </Box>
              </Box>
-        </Box>
+           </Box>
        </TabPanel>
-       </Box>
+     </Box>
+
     </Box>
   );
 
@@ -1699,23 +1782,6 @@ function App() {
       )}
       <Popover id={accountMenuId} open={openAccountMenu} anchorEl={accountMenuAnchorEl} onClose={handleAccountMenuClose} anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }} transformOrigin={{ vertical: 'top', horizontal: 'left'}} slotProps={{ paper: { sx: { width: '220px', mt: 1, borderRadius: 4, boxShadow: '0 8px 32px rgba(0,0,0,0.12)', border: '1px solid rgba(0,0,0,0.04)' } } }} >
         <List dense sx={{ py: 1 }}>
-          <ListItem sx={{ px: 2, py: 1 }}>
-              <ListItemText 
-              primary="Monthly Requests" 
-                secondary={
-                  userProfile ? (
-                    userProfile.is_pro ? "Unlimited" : 
-                    (userProfile.request_count !== undefined ? `${10 - userProfile.request_count} / 10 used` : "Loading...")
-                  ) : "Loading..."
-                } 
-              primaryTypographyProps={{ 
-                sx: { fontSize: '0.8rem', fontWeight: 500, color: 'text.primary' }
-              }}
-              secondaryTypographyProps={{ 
-                sx: { fontSize: '0.75rem', color: 'grey.500', mt: 0.25 }
-              }}
-              />
-            </ListItem>
             {currentView === 'chat' ? (
             <ListItemButton onClick={() => { setCurrentView('home'); setCurrentChatId(null); setMessages([]); setCurrentScriptContentForChat(''); setCurrentChatTitle(''); handleAccountMenuClose(); }} sx={{ mx: 1, borderRadius: 2, py: 1, '&:hover': { bgcolor: 'grey.50' } }}>
               <ListItemText primary="Go to dashboard" primaryTypographyProps={{ sx: { fontSize: '0.85rem', fontWeight: 400 } }} />
@@ -1786,89 +1852,6 @@ function App() {
           <Button onClick={() => setIsPublicConfirmOpen(false)} size="small" sx={{ textTransform: 'none', fontSize: '0.85rem', color: 'text.secondary' }}>Close</Button>
           <Button onClick={requestTogglePublic} size="medium" autoFocus variant="contained" sx={{ textTransform: 'none', borderRadius: 2 }}>
             {currentScriptIsPublic ? 'Make Private' : 'Make Public'}
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      {/* Upgrade Modal */}
-      <Dialog 
-        open={isUpgradeModalOpen} 
-        onClose={() => setIsUpgradeModalOpen(false)}
-        PaperProps={{ 
-          sx: { 
-            borderRadius: 4,
-            p: 2.5,
-            minWidth: '280px',
-            maxWidth: '320px',
-            boxShadow: '0 8px 32px rgba(0,0,0,0.12)',
-          } 
-        }}
-      >
-        <DialogTitle sx={{ textAlign: 'center', fontSize: '1.2rem', fontWeight: 600, pb: 1, px: 1 }}>
-          {"Unlock Unlimited Magix"}
-        </DialogTitle>
-        <DialogContent sx={{ textAlign: 'center', pt: 0, px: 1 }}>
-          <DialogContentText sx={{ mb: 2, fontSize: '0.85rem', color: 'text.secondary', lineHeight: 1.4 }}>
-            You've used all your 10 free requests for this month.
-          </DialogContentText>
-          
-          {/* Compact Features Box */}
-          <Box sx={{ textAlign: 'left', bgcolor: 'grey.50', p: 2, borderRadius: 2, mb: 2 }}>
-            <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600, fontSize: '0.85rem', color: 'text.primary' }}>
-              ✨ Magix Pro includes:
-          </Typography>
-            <Box sx={{ fontSize: '0.8rem', lineHeight: 1.4, color: 'text.secondary' }}>
-              <div>• Unlimited website modifications</div>
-              <div>• Access to all Pro features</div>
-              <div>• Early access to new features</div>
-            </Box>
-          </Box>
-          
-          <DialogContentText variant="caption" sx={{ fontSize: '0.75rem', color: 'text.secondary' }}>
-            Your quota resets on the 1st of next month.
-          </DialogContentText>
-        </DialogContent>
-        <DialogActions sx={{ p: 2, pt: 0, flexDirection: 'column', gap: 1.5 }}>
-          <Button 
-            onClick={() => {
-              window.open(`https://trymagix.lemonsqueezy.com/buy/18a60869-3b1a-4e71-a0f9-6ecd15b3b6d5?checkout[email]=${session?.user?.email}`, '_blank');
-              setIsUpgradeModalOpen(false);
-            }} 
-            variant="contained" 
-            size="medium"
-            fullWidth
-            sx={{ 
-              borderRadius: 2,
-              py: 1, 
-              fontSize: '0.9rem',
-              fontWeight: 500,
-              bgcolor: '#4caf50',
-              color: 'white',
-              textTransform: 'none',
-              boxShadow: '0 2px 8px rgba(76,175,80,0.25)',
-              '&:hover': { 
-                bgcolor: '#45a049',
-                boxShadow: '0 4px 12px rgba(76,175,80,0.35)'
-              }
-            }}
-          >
-            Upgrade to Pro
-          </Button>
-          <Button 
-            onClick={() => setIsUpgradeModalOpen(false)} 
-            size="small"
-            sx={{ 
-              fontSize: '0.8rem', 
-              textTransform: 'none',
-              color: 'text.secondary',
-              minHeight: 'auto',
-              '&:hover': {
-                bgcolor: 'transparent',
-                color: 'text.primary'
-              }
-            }}
-          >
-            Maybe Later
           </Button>
         </DialogActions>
       </Dialog>
