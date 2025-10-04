@@ -9,7 +9,7 @@ const corsHeaders = {
 };
 // --- Claude 4 Configuration ---
 const REPLICATE_API_TOKEN = Deno.env.get("REPLICATE_API_TOKEN");
-const API_ENDPOINT = "https://api.replicate.com/v1/models/anthropic/claude-4-sonnet/predictions";
+const API_ENDPOINT = "https://api.replicate.com/v1/models/anthropic/claude-4.5-sonnet/predictions";
 // --- System Prompt for Robust Code Generation (Your existing detailed prompt) ---
 const SYSTEM_PROMPT = `You are an expert web developer AI assistant embedded in a browser extension. Your sole responsibility is to generate concise, complete, and resilient JavaScript code snippets to modify a live website's UI according to user instructions. The generated code will be injected directly onto the page by the extension.
 

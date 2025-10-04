@@ -9,7 +9,7 @@ const corsHeaders = {
 };
 // --- Gemini Configuration ---
 const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
-const GEMINI_MODEL_NAME = "gemini-2.0-flash";
+const GEMINI_MODEL_NAME = "gemini-2.5-flash";
 const API_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL_NAME}:generateContent?key=${GEMINI_API_KEY}`;
 // --- System Prompt for Analysis (MODIFIED) ---
 const SYSTEM_PROMPT_ANALYZE = `
