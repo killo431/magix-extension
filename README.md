@@ -519,9 +519,9 @@ Built with amazing open-source technologies:
 - [Chrome Extensions API](https://developer.chrome.com/docs/extensions/) - Platform
 
 Special thanks to:
-- Google Gemini, Anthropic Claude, OpenAI, xAI for AI APIs
 - The Chrome Extensions developer community
 - All contributors and users
+- Shoutout to [Droid from Factory AI](https://factory.ai) for being an awesome coding buddy throughout this project!
 
 ---
 
