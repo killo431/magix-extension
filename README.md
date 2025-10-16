@@ -10,7 +10,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
 [![Version](https://img.shields.io/badge/version-1.0.0-green?style=for-the-badge)](https://github.com/kchander/magix-extension)
 
-[Features](#-features) • [Installation](#-installation) • [Usage](#-usage) • [AI Providers](#-supported-ai-providers) • [Development](#-development)
+[Features](#-features) • [Installation](#-installation) • [Usage](#-usage) • [Discover Mods](#-discover--share-public-modifications) • [AI Providers](#-supported-ai-providers) • [Development](#-development)
 
 </div>
 
@@ -82,14 +82,14 @@ Think of it as **ChatGPT meets Tampermonkey** - the conversational intelligence 
 ### 🌐 **Discover & Share**
 - Browse public modifications
 - Install with one click
-- See install counts
-- Filter by website
+- See install counts & usage stats
+- Filter by website domain
 
 </td>
 <td width="50%">
 
 ### 🔐 **Secure by Design**
-- BYO API keys
+- BYO API keys (no subscription)
 - No tracking or analytics
 - Open source code
 - Row-level security in DB
@@ -102,13 +102,30 @@ Think of it as **ChatGPT meets Tampermonkey** - the conversational intelligence 
 
 ## 🚀 Installation
 
-### Option 1: Chrome Web Store (Recommended)
+### ⭐ Chrome Web Store (Recommended)
+
+**The easiest way to use Magix is to install it directly from the Chrome Web Store.**
 
 [![Install from Chrome Web Store](https://storage.googleapis.com/web-dev-uploads/image/WlD8wC6g8khYWPJUsQceQkhXSlv1/UV4C4ybeBTsZt43U4xis.png)](https://chromewebstore.google.com/detail/magix/ebfhenlkpdngcofiegobedbahdeemgjo)
 
-Click the badge above or visit: https://chromewebstore.google.com/detail/magix/ebfhenlkpdngcofiegobedbahdeemgjo
+**Why install from Chrome Web Store?**
 
-### Option 2: Build from Source
+✅ **No setup required** - Install and start using immediately  
+✅ **Automatic updates** - Get new features and bug fixes automatically  
+✅ **Use your own API keys** - No subscription costs, just pay for what you use with your chosen AI provider  
+✅ **Fully functional** - All features work out of the box  
+✅ **No coding needed** - No need to build from source  
+
+**Installation link:** https://chromewebstore.google.com/detail/magix/ebfhenlkpdngcofiegobedbahdeemgjo
+
+---
+
+### 🔧 Build from Source (For Developers)
+
+Only needed if you want to contribute or customize the extension.
+
+<details>
+<summary>Click to expand build instructions</summary>
 
 ```bash
 # Clone the repository
@@ -127,6 +144,10 @@ npm run build
 # 3. Click "Load unpacked"
 # 4. Select the magix-extension directory
 ```
+
+**Note:** If building from source, you'll need to set up your own Supabase backend. See [Supabase Setup Guide](#-supabase-setup-for-developers) below.
+
+</details>
 
 ---
 
@@ -149,7 +170,7 @@ npm run build
 2. Click the **profile icon** → **Settings** → **API Keys**
 3. Select your AI provider and enter your API key
 
-**Get API Keys:**
+**Get API Keys (All offer pay-as-you-go pricing):**
 - 🟢 **Gemini** (Free tier available): [Google AI Studio](https://makersuite.google.com/app/apikey)
 - 🟣 **Claude**: [Anthropic Console](https://console.anthropic.com/)
 - 🔵 **OpenAI**: [OpenAI Platform](https://platform.openai.com/api-keys)
@@ -166,6 +187,8 @@ npm run build
 🪄 Magix: *updates the modification*
 ```
 
+**⚠️ Important:** Stay on the current tab while Magix is generating and applying modifications. Switching tabs may interrupt the process.
+
 ---
 
 ## 💡 Usage Examples
@@ -177,6 +200,7 @@ npm run build
 "Make all text bigger"
 "Change the background to dark blue"
 "Remove the cookie banner"
+"Add dark mode to this site"
 ```
 
 ### Advanced Features
@@ -186,15 +210,60 @@ npm run build
 "Create a text-to-speech button for all paragraphs"
 "Add a download button for all images"
 "Make this site look like it's from the 90s"
+"Add a floating note-taking widget"
 ```
 
 ### Element-Specific Changes
 
 ```
-1. Click "Select Element" chip
+1. Click "Select Element" chip in the input area
 2. Click any element on the page
-3. "Make this section sticky when scrolling"
+3. Type: "Make this section sticky when scrolling"
+4. Magix targets that specific element
 ```
+
+---
+
+## 🌐 Discover & Share Public Modifications
+
+### Finding Public Modifications
+
+Magix has a built-in **Discover** feature that lets you browse and install modifications created by other users for the current website.
+
+**How to discover modifications:**
+
+1. Navigate to any website (e.g., YouTube, Twitter, Reddit)
+2. Click the Magix button (🪄)
+3. Click the **Search icon** (🔍) in the top navigation
+4. Browse available public modifications for the current domain
+5. Click **"Install"** on any modification to apply it instantly
+6. The modification is added to your active mods and starts working immediately
+
+**What you'll see:**
+- Modification title and description
+- Install count (how many people installed it)
+- One-click installation
+- Automatic filtering by website domain
+
+### Sharing Your Modifications
+
+Made something cool? Share it with the community!
+
+**How to make a modification public:**
+
+1. Create a modification by chatting with Magix
+2. Once the modification is applied and working, click the **Profile icon** in the chat header
+3. Click the **Public icon** (🌐) button
+4. Enter a descriptive title for your modification (max 75 characters)
+5. Click **"Make Public"**
+6. Your modification is now visible in the Discover tab for all users on that domain
+
+**Tips for sharing:**
+- Use clear, descriptive titles (e.g., "Dark Mode Toggle" instead of "My Mod")
+- Test thoroughly before making public
+- You can make it private again anytime by clicking the Public icon again
+
+**Privacy note:** When you make a modification public, only the code and title are shared. Your personal information remains private.
 
 ---
 
@@ -208,6 +277,8 @@ npm run build
 | **xAI** | Grok 3, Grok 4 | 💰💰 Paid | ⚡⚡⚡ Fast | Quick iterations |
 | **OpenRouter** | 50+ models | 💰-💰💰 Varies | ⚡-⚡⚡⚡ Varies | Model flexibility |
 
+**All providers use pay-as-you-go pricing with your own API key - no subscription to Magix required!**
+
 ---
 
 ## 🛠️ Development
@@ -217,6 +288,7 @@ npm run build
 - Node.js 16+
 - npm or yarn
 - Chrome/Chromium browser
+- Supabase account (for data persistence)
 
 ### Local Development
 
@@ -246,61 +318,107 @@ magix-extension/
 │   ├── App.jsx               # Main app component
 │   ├── aiService.js          # Multi-provider AI integration
 │   ├── index.jsx             # Entry point
-│   └── .env.local            # Your credentials (not committed)
+│   ├── .env.local            # Your credentials (not committed)
+│   └── .env.example          # Template for environment variables
 ├── 📁 database-schema/       # SQL migrations
 │   └── *.sql                 # Supabase table schemas
 └── 📁 icons/                 # Extension icons
 ```
 
-### Setting Up Your Own Instance
+---
 
-<details>
-<summary>Click to expand full setup instructions</summary>
+## 🗄️ Supabase Setup (For Developers)
 
-#### 1. Supabase Setup
+**Note:** If you installed from Chrome Web Store, you can skip this section. This is only needed if you're building from source.
 
-```bash
-# Create project at https://supabase.com
-# Copy your project URL and anon key
-```
+Magix uses Supabase for:
+- User authentication (Google OAuth)
+- Storing your modifications
+- Syncing across devices
+- Public modification sharing
 
-```bash
-# Create sidepanel/.env.local
-VITE_SUPABASE_URL="https://your-project.supabase.co"
-VITE_SUPABASE_ANON_KEY="your-anon-key"
-```
+### Step 1: Create Supabase Project
 
-```sql
--- Run the migration in Supabase SQL Editor
--- File: database-schema/20250429134154_create_scripts_table.sql
-```
+1. Go to [supabase.com](https://supabase.com) and create a free account
+2. Click **"New Project"**
+3. Enter project details:
+   - Project name: `magix-extension` (or any name)
+   - Database password: Generate a strong password
+   - Region: Choose closest to you
+4. Wait for project to be created (1-2 minutes)
 
-#### 2. Google OAuth Setup
+### Step 2: Get Your Credentials
 
-```bash
-# 1. Go to Google Cloud Console
-# 2. Create OAuth 2.0 Client ID (Type: Chrome App)
-# 3. Copy your Client ID
-```
+1. In your Supabase project, go to **Settings** → **API**
+2. Copy the following:
+   - **Project URL** (looks like `https://xxxxx.supabase.co`)
+   - **anon/public key** (the `anon` key)
 
-Update `manifest.json`:
-```json
-"oauth2": {
-  "client_id": "YOUR_CLIENT_ID.apps.googleusercontent.com",
-  "scopes": [
-    "openid",
-    "https://www.googleapis.com/auth/userinfo.email",
-    "https://www.googleapis.com/auth/userinfo.profile"
-  ]
-}
-```
+### Step 3: Configure Environment Variables
 
-#### 3. Build and Test
+1. Navigate to `sidepanel/` directory
+2. Copy `.env.example` to `.env.local`:
+   ```bash
+   cp sidepanel/.env.example sidepanel/.env.local
+   ```
+3. Open `sidepanel/.env.local` and add your credentials:
+   ```env
+   VITE_SUPABASE_URL="https://your-project-id.supabase.co"
+   VITE_SUPABASE_ANON_KEY="your-anon-key-here"
+   ```
+
+### Step 4: Set Up Database Schema
+
+1. In Supabase, go to **SQL Editor**
+2. Click **"New Query"**
+3. Copy the contents of `database-schema/20250429134154_create_scripts_table.sql`
+4. Paste into the SQL editor
+5. Click **"Run"**
+6. You should see: "Success. No rows returned"
+
+This creates:
+- `scripts` table - Stores your modifications
+- `chats` table - Stores conversation history
+- `chat_messages` table - Stores individual messages
+- Row-level security policies - Protects your data
+
+### Step 5: Enable Google OAuth (Optional)
+
+If you want sign-in functionality:
+
+1. Go to **Authentication** → **Providers** → **Google**
+2. Enable Google provider
+3. Follow Supabase instructions to set up Google OAuth
+4. Update your `manifest.json` with your OAuth client ID
+
+### Step 6: Build and Test
 
 ```bash
 npm run build
 # Load extension in Chrome from chrome://extensions/
 ```
+
+**That's it!** Your self-hosted Magix instance is ready.
+
+### Troubleshooting Supabase Setup
+
+<details>
+<summary>Click for common issues</summary>
+
+**Issue: "Error connecting to database"**
+- Check that your `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are correct
+- Make sure there are no extra spaces or quotes
+- Rebuild the extension after changing `.env.local`
+
+**Issue: "Sign-in not working"**
+- Verify Google OAuth is enabled in Supabase
+- Check that your OAuth client ID is in `manifest.json`
+- Make sure redirect URLs are configured in Google Cloud Console
+
+**Issue: "Scripts not saving"**
+- Verify database schema is applied (check tables exist in Supabase Table Editor)
+- Check RLS policies are created
+- Look for errors in browser console (F12)
 
 </details>
 
@@ -331,7 +449,8 @@ npm run build
 <summary><b>❌ Scripts not persisting / Sign-in not working</b></summary>
 
 **Solution:**
-- Make sure you've set up Supabase correctly
+- If using Chrome Web Store version: This should work out of the box
+- If building from source: Make sure you've set up Supabase correctly (see Supabase Setup guide above)
 - Check that `sidepanel/.env.local` has correct credentials
 - Rebuild extension: `npm run build`
 - Verify database schema is applied in Supabase SQL Editor
@@ -345,6 +464,17 @@ npm run build
 - Try using the Element Selector to target specific elements
 - Some sites have strict Content Security Policies (CSP) that may block scripts
 - Check browser console (F12) for error messages
+- Stay on the tab while modification is being applied
+
+</details>
+
+<details>
+<summary><b>❌ Modification stops working after switching tabs</b></summary>
+
+**Solution:**
+- Don't switch tabs or navigate away while Magix is generating and applying code
+- Wait for the success message before switching tabs
+- If interrupted, try applying the modification again
 
 </details>
 
@@ -373,12 +503,12 @@ Contributions are welcome! Here's how you can help:
 
 - [ ] Firefox extension support
 - [ ] Offline mode with local AI models
-- [ ] Script marketplace with ratings
+- [ ] Script marketplace with ratings and reviews
 - [ ] Export/import script collections
 - [ ] Collaborative editing
-- [ ] Browser sync across devices
 - [ ] Script scheduling (run at specific times)
 - [ ] Advanced CSS preprocessor support
+- [ ] Mobile browser support
 
 ---
 
@@ -399,7 +529,7 @@ Built with amazing open-source technologies:
 - [Chrome Extensions API](https://developer.chrome.com/docs/extensions/) - Platform
 
 Special thanks to:
-- Google Gemini, Anthropic Claude, OpenAI for AI APIs
+- Google Gemini, Anthropic Claude, OpenAI, xAI for AI APIs
 - The Chrome Extensions developer community
 - All contributors and users
 
@@ -419,14 +549,14 @@ Special thanks to:
 **Your Data, Your Control:**
 
 ✅ **API keys** are stored locally in your browser  
-✅ **Modifications** are saved in your personal Supabase database  
+✅ **Modifications** are saved in your personal Supabase database (Chrome Web Store version uses hosted backend)  
 ✅ **No tracking** or analytics  
 ✅ **Open source** - audit the code yourself  
 ✅ **Row-level security** protects your data in the database  
 
 **What's Shared:**
 
-- Public modifications (only if you choose to share)
+- Public modifications (only if you choose to make them public)
 - Anonymous usage stats to AI providers when generating code
 
 **No Third-Party Access:**
