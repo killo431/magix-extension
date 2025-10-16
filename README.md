@@ -9,6 +9,7 @@
 [![Chrome Web Store](https://img.shields.io/badge/Chrome%20Web%20Store-Download-blue?style=for-the-badge&logo=google-chrome)](https://chromewebstore.google.com/detail/magix/ebfhenlkpdngcofiegobedbahdeemgjo)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
 [![Version](https://img.shields.io/badge/version-1.0.0-green?style=for-the-badge)](https://github.com/kchander/magix-extension)
+[![Twitter Follow](https://img.shields.io/badge/Follow-@kishanchander__-1DA1F2?style=for-the-badge&logo=x&logoColor=white)](https://x.com/kishanchander_)
 
 [Features](#-features) • [Installation](#-installation) • [Usage](#-usage) • [Discover Mods](#-discover--share-public-modifications) • [AI Providers](#-supported-ai-providers) • [Development](#-development)
 
@@ -320,8 +321,8 @@ magix-extension/
 │   ├── index.jsx             # Entry point
 │   ├── .env.local            # Your credentials (not committed)
 │   └── .env.example          # Template for environment variables
-├── 📁 database-schema/       # SQL migrations
-│   └── *.sql                 # Supabase table schemas
+├── 📁 database-schema/       # Database setup
+│   └── setup.sql             # Run this in Supabase SQL Editor
 └── 📁 icons/                 # Extension icons
 ```
 
@@ -371,16 +372,18 @@ Magix uses Supabase for:
 
 1. In Supabase, go to **SQL Editor**
 2. Click **"New Query"**
-3. Copy the contents of `database-schema/20250429134154_create_scripts_table.sql`
-4. Paste into the SQL editor
+3. Open the file `database-schema/setup.sql` from this repository
+4. Copy the entire contents and paste into the SQL editor
 5. Click **"Run"**
 6. You should see: "Success. No rows returned"
 
-This creates:
-- `scripts` table - Stores your modifications
-- `chats` table - Stores conversation history
-- `chat_messages` table - Stores individual messages
-- Row-level security policies - Protects your data
+This single file creates:
+- All 3 tables (`scripts`, `chats`, `chat_messages`)
+- Database indexes for performance
+- Row-level security policies
+- Auto-update timestamp triggers
+
+Everything is set up in one go!
 
 ### Step 5: Enable Google OAuth (Optional)
 
@@ -499,19 +502,6 @@ Contributions are welcome! Here's how you can help:
 
 ---
 
-## 📋 Roadmap
-
-- [ ] Firefox extension support
-- [ ] Offline mode with local AI models
-- [ ] Script marketplace with ratings and reviews
-- [ ] Export/import script collections
-- [ ] Collaborative editing
-- [ ] Script scheduling (run at specific times)
-- [ ] Advanced CSS preprocessor support
-- [ ] Mobile browser support
-
----
-
 ## 📜 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
@@ -541,29 +531,50 @@ Special thanks to:
 - 📦 **GitHub Repository**: https://github.com/kchander/magix-extension
 - 🐛 **Issue Tracker**: https://github.com/kchander/magix-extension/issues
 - 💬 **Discussions**: https://github.com/kchander/magix-extension/discussions
+- 🐦 **Follow on Twitter/X**: https://x.com/kishanchander_
 
 ---
 
 ## 🔒 Privacy & Security
 
-**Your Data, Your Control:**
+**What Data is Collected:**
 
-✅ **API keys** are stored locally in your browser  
-✅ **Modifications** are saved in your personal Supabase database (Chrome Web Store version uses hosted backend)  
-✅ **No tracking** or analytics  
-✅ **Open source** - audit the code yourself  
-✅ **Row-level security** protects your data in the database  
+The Chrome Web Store version of Magix stores the following in a secure Supabase database:
 
-**What's Shared:**
+✅ **Your modifications** - The code you generate and apply to websites  
+✅ **Chat history** - Your conversations with the AI (to maintain context and history)  
+✅ **Account info** - Your Google account email and profile (for authentication)  
 
-- Public modifications (only if you choose to make them public)
-- Anonymous usage stats to AI providers when generating code
+**What's NOT Collected:**
 
-**No Third-Party Access:**
+❌ **API keys** - Stored locally in your browser only, never sent to our servers  
+❌ **Browsing history** - We don't track what websites you visit  
+❌ **Personal data** - No analytics, tracking pixels, or telemetry  
+❌ **Third-party sharing** - Your data is never sold or shared  
 
-- We don't have access to your API keys
-- We don't store or log your conversations
-- We don't sell your data (there's nothing to sell!)
+**Security Features:**
+
+🔒 **Row-level security** - You can only access your own data  
+🔒 **Encrypted storage** - Database is secured with industry-standard encryption  
+🔒 **Open source** - Audit the code yourself on GitHub  
+🔒 **OAuth authentication** - Secure Google sign-in, no passwords stored  
+
+**What's Shared Publicly (Optional):**
+
+When you make a modification public:
+- The modification code and title become visible to other users
+- Install and usage counts are tracked
+- Your personal information remains private
+
+**Data Control:**
+
+- Delete your account anytime to remove all your data
+- Make modifications private/public as you choose
+- Export your data (coming soon)
+
+**For Self-Hosted Instances:**
+
+If you build from source, all data stays in your own Supabase database that you control.
 
 ---
 
@@ -572,6 +583,11 @@ Special thanks to:
 ### ⭐ Star this repo if you find it useful!
 
 Made with ❤️ by [kchander](https://github.com/kchander)
+
+[![Follow on X](https://img.shields.io/badge/Follow-@kishanchander__-1DA1F2?style=flat&logo=x&logoColor=white)](https://x.com/kishanchander_)
+
+**Want to support this project?**  
+⭐ Star the repo • 🐦 Follow on [X/Twitter](https://x.com/kishanchander_) • 💬 Share with friends
 
 **Happy Coding!** 🪄
 
