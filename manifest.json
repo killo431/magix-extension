@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Magix",
-  "version": "0.3.0",
+  "version": "1.0.0",
   "description": "Modify any website.",
   "permissions": [
     "activeTab",
@@ -45,7 +45,7 @@
     }
   ],
   "oauth2": {
-    "client_id": "134480803221-sb4i2uhn2sbpu5q4jc1nlj1khnsj01s0.apps.googleusercontent.com",
+    "client_id": "YOUR_GOOGLE_OAUTH_CLIENT_ID.apps.googleusercontent.com",
     "scopes": [
       "openid",
       "https://www.googleapis.com/auth/userinfo.email",

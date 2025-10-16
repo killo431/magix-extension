@@ -110,7 +110,6 @@ async function handleUserScriptRegistration(message, sender, sendResponse) {
   }
 
   const broadMatchPattern = getBroadMatchPattern(targetUrl);
-  // console.log(`Using broad match pattern: ${broadMatchPattern}`);
 
   // Check if the userScripts API is available using the recommended method
   if (!isUserScriptsAvailable()) {
@@ -134,14 +133,12 @@ async function handleUserScriptRegistration(message, sender, sendResponse) {
     // 1. Attempt to unregister any existing script with the *same database ID* first.
     // This handles updates/overwrites correctly.
     try {
-      // console.log(`Attempting to unregister existing script with ID: ${scriptId} before registering.`);
       await chrome.userScripts.unregister({ ids: [scriptId] });
-      // console.log(`Successfully unregistered script ${scriptId} (if it existed).`);
     } catch (unregisterError) {
       // Ignore "Nonexistent script ID" errors, as this just means the script wasn't registered before.
       // Log other potential errors during unregistration.
       if (unregisterError.message && unregisterError.message.includes("Nonexistent script ID")) {
-        // console.log(`Script ${scriptId} not found during pre-registration unregister check (this is expected for new scripts). Proceeding to register.`);
+        // Expected for new scripts, continue to registration
       } else {
         // Log and rethrow unexpected errors during unregistration attempt
         console.error(`Unexpected error during pre-registration unregister attempt for ${scriptId}:`, unregisterError);
@@ -150,7 +147,6 @@ async function handleUserScriptRegistration(message, sender, sendResponse) {
     }
 
     // 2. Register the new script using the database ID
-    // console.log(`Registering user script for pattern ${broadMatchPattern} with database ID: ${scriptId}`);
     await chrome.userScripts.register([{
       id: scriptId, // Use the database UUID
       matches: [broadMatchPattern],
@@ -158,7 +154,6 @@ async function handleUserScriptRegistration(message, sender, sendResponse) {
       runAt: "document_idle"
     }]);
 
-    // console.log(`User script ${scriptId} registered successfully for pattern ${broadMatchPattern}.`);
     sendResponse({ success: true }); // No need to send back ID, sidepanel already has it
 
   } catch (error) {
@@ -171,12 +166,9 @@ async function handleUserScriptRegistration(message, sender, sendResponse) {
 // Listener for messages from content scripts or other parts of the extension
 // Make the listener async to handle await calls properly
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  // console.log('Background script received message:', message);
-
   // Handle opening side panel (existing logic)
   if (message.action === "openSidePanel") {
     if (sender.tab) {
-      // console.log(`Opening side panel for tab ${sender.tab.id}...`);
       chrome.sidePanel.open({ windowId: sender.tab.windowId });
       sendResponse({ status: "Side panel opening request received." });
     } else {
@@ -225,7 +217,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // Handle removing script effect (JS or CSS)
   if (message.type === 'REMOVE_SCRIPT_EFFECT') {
     const { scriptId, scriptCode } = message;
-    // console.log(`Received request to remove effect for script ID: ${scriptId}`);
 
     // Basic check to determine type (improve as needed)
     const isJs = scriptCode && ['function', 'const', 'let', 'var', 'document', 'window', '=>'].some(k => scriptCode.includes(k));
@@ -238,9 +229,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         try {
           // Check if userScripts API is available before attempting to use it
           if (isUserScriptsAvailable()) {
-             // console.log(`Attempting to unregister JS script with ID: ${scriptId}`);
              await chrome.userScripts.unregister({ ids: [scriptId] });
-             // console.log(`Unregistration successful for script ID: ${scriptId} (if it was registered).`);
              sendResponse({ success: true, status: "JS unregistration successful." });
           } else {
              console.error("chrome.userScripts.unregister API not available.");
@@ -251,7 +240,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           console.error(`Error trying to unregister script ${scriptId}:`, error);
           // Check if the error indicates the script ID was not found (which is okay)
           if (error.message && (error.message.includes("Invalid script ID") || error.message.includes("No script with ID") || error.message.includes("Nonexistent script ID"))) {
-             // console.warn(`Script ID ${scriptId} was not found for unregistration (it might have already been removed or never registered).`);
              // Still send success=true because the desired state (script not registered) is achieved.
              sendResponse({ success: true, status: "Script ID not found for unregistration." });
           } else {
@@ -276,7 +264,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         // Check if userScripts API is available
         if (isUserScriptsAvailable()) {
           const registeredScripts = await chrome.userScripts.getScripts();
-          // console.log(`Found ${registeredScripts.length} registered scripts`);
           sendResponse({ success: true, scripts: registeredScripts });
         } else {
           console.error("chrome.userScripts.getScripts API not available.");

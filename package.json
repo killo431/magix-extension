@@ -13,9 +13,18 @@
     "type": "git",
     "url": "git+https://github.com/kchander/magix-extension.git"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "keywords": [
+    "chrome-extension",
+    "ai",
+    "web-modification",
+    "userscripts",
+    "browser-extension",
+    "gemini",
+    "claude",
+    "openai"
+  ],
+  "author": "kchander",
+  "license": "MIT",
   "bugs": {
     "url": "https://github.com/kchander/magix-extension/issues"
   },
