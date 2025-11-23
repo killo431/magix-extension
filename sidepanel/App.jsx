@@ -749,7 +749,14 @@ function App() {
     const originalMessageText = inputValue.trim();
     if (!originalMessageText && !currentChatId) return;
 
-    // Check if API key is configured before proceeding
+    // 1. Check login status first
+    const userId = session?.user?.id;
+    if (!userId) {
+      handleSignIn();
+      return;
+    }
+
+    // 2. Check if API key is configured before proceeding
     const config = await getAIConfig();
     if (!config.apiKey || config.apiKey.trim() === '') {
       setError('Please configure your API key in Settings → API Keys before using Magix.');
@@ -773,13 +780,8 @@ function App() {
     let activeChatId = currentChatId;
     let scriptContentForThisInteraction = currentScriptContentForChat;
     let isNewChat = false;
-    const userId = session?.user?.id;
 
     try {
-      if (!userId) {
-        handleSignIn(); setIsLoading(false); return;
-      }
-
       // No usage limits - users bring their own API keys!
 
       if (!activeChatId) {
@@ -1772,9 +1774,9 @@ function App() {
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh', bgcolor: 'background.paper', justifyContent: currentView === 'home' && !session ? 'center' : 'flex-start' }}>
-      {session && currentView === 'home' && (
+      {currentView === 'home' && (
         <IconButton onClick={handleAccountMenuOpen} size="small" sx={{ position: 'absolute', top: 16, left: 16, zIndex: 2 }}>
-           <AccountCircleIcon sx={{ color: 'grey.400', fontSize: '1.4rem' }} />
+           <AccountCircleIcon sx={{ color: session ? 'grey.400' : 'grey.300', fontSize: '1.4rem' }} />
         </IconButton>
       )}
       {currentView === 'home' && (
@@ -1799,8 +1801,15 @@ function App() {
                  </ListItemButton>
              )}
              {currentView !== 'chat' && (
-               <ListItemButton onClick={() => { supabase.auth.signOut(); handleAccountMenuClose(); }} sx={{ mx: 1, borderRadius: 2, py: 1, '&:hover': { bgcolor: 'grey.50' } }}>
-                 <ListItemText primary="Log out" primaryTypographyProps={{ sx: { fontSize: '0.85rem', fontWeight: 400 } }} />
+               <ListItemButton onClick={() => { 
+                 if (session) {
+                   supabase.auth.signOut(); 
+                 } else {
+                   handleSignIn();
+                 }
+                 handleAccountMenuClose(); 
+               }} sx={{ mx: 1, borderRadius: 2, py: 1, '&:hover': { bgcolor: 'grey.50' } }}>
+                 <ListItemText primary={session ? "Log out" : "Sign in"} primaryTypographyProps={{ sx: { fontSize: '0.85rem', fontWeight: 400 } }} />
                  </ListItemButton>
              )}
           </List>
