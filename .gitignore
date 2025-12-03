@@ -5,7 +5,7 @@ node_modules/
 project-details/
 
 # Build output
-dist/
+# dist/ - Needed for browser extension to work (manifest.json references dist/)
 
 # Logs
 logs
@@ -104,7 +104,7 @@ out
 
 # Nuxt.js build / generate output
 .nuxt
-dist
+# dist/ - Needed for browser extension (manifest.json references dist/sidepanel/)
 
 # Gatsby files
 .cache/
