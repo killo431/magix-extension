@@ -4,7 +4,20 @@
 const EXTENSION_VERSION = chrome.runtime.getManifest().version;
 const EXTENSION_NAME = 'Magix';
 
-console.log(`${EXTENSION_NAME} v${EXTENSION_VERSION} service worker initializing...`);
+// Detect browser type (Chrome, Edge, or other Chromium-based)
+function detectBrowser() {
+  const userAgent = navigator.userAgent;
+  if (userAgent.includes('Edg/')) {
+    return 'edge';
+  } else if (userAgent.includes('Chrome/')) {
+    return 'chrome';
+  }
+  return 'chromium';
+}
+
+const BROWSER_TYPE = detectBrowser();
+
+console.log(`${EXTENSION_NAME} v${EXTENSION_VERSION} service worker initializing on ${BROWSER_TYPE}...`);
 
 // Error logging utility
 function logError(context, error, additionalInfo = {}) {
@@ -115,14 +128,23 @@ async function handleUserScriptRegistration(message, sender, sendResponse) {
   if (!isUserScriptsAvailable()) {
     console.error("UserScripts API is not available - user needs to enable required toggle.");
     
-    // Provide user-friendly guidance based on Chrome version
-    let version = Number(navigator.userAgent.match(/(Chrome|Chromium)\/([0-9]+)/)?.[2]);
+    // Provide user-friendly guidance based on browser type and version
+    const browser = detectBrowser();
+    let version = Number(navigator.userAgent.match(/(Chrome|Edg)\/([0-9]+)/)?.[2]);
     let errorMessage = "UserScripts API not available. ";
     
-    if (version >= 138) {
-      errorMessage += "Please enable 'Allow User Scripts' toggle:\n1. Go to chrome://extensions\n2. Click 'Details' on Magix extension\n3. Enable 'Allow User Scripts' toggle";
+    if (browser === 'edge') {
+      if (version >= 138) {
+        errorMessage += "Please enable 'Allow User Scripts' toggle:\n1. Go to edge://extensions\n2. Click 'Details' on Magix extension\n3. Enable 'Allow User Scripts' toggle";
+      } else {
+        errorMessage += "Please enable Developer Mode:\n1. Go to edge://extensions\n2. Enable 'Developer Mode' toggle in bottom left";
+      }
     } else {
-      errorMessage += "Please enable Developer Mode:\n1. Go to chrome://extensions\n2. Enable 'Developer Mode' toggle in top right";
+      if (version >= 138) {
+        errorMessage += "Please enable 'Allow User Scripts' toggle:\n1. Go to chrome://extensions\n2. Click 'Details' on Magix extension\n3. Enable 'Allow User Scripts' toggle";
+      } else {
+        errorMessage += "Please enable Developer Mode:\n1. Go to chrome://extensions\n2. Enable 'Developer Mode' toggle in top right";
+      }
     }
     
     sendResponse({ success: false, error: errorMessage });
@@ -192,14 +214,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const isAvailable = isUserScriptsAvailable();
     
     if (!isAvailable) {
-      // Provide user-friendly guidance based on Chrome version
-      let version = Number(navigator.userAgent.match(/(Chrome|Chromium)\/([0-9]+)/)?.[2]);
+      // Provide user-friendly guidance based on browser type and version
+      const browser = detectBrowser();
+      let version = Number(navigator.userAgent.match(/(Chrome|Edg)\/([0-9]+)/)?.[2]);
       let errorMessage = "UserScripts API not available. ";
       
-      if (version >= 138) {
-        errorMessage += "Please enable 'Allow User Scripts' toggle:\n1. Go to chrome://extensions\n2. Click 'Details' on Magix extension\n3. Enable 'Allow User Scripts' toggle";
+      if (browser === 'edge') {
+        if (version >= 138) {
+          errorMessage += "Please enable 'Allow User Scripts' toggle:\n1. Go to edge://extensions\n2. Click 'Details' on Magix extension\n3. Enable 'Allow User Scripts' toggle";
+        } else {
+          errorMessage += "Please enable Developer Mode:\n1. Go to edge://extensions\n2. Enable 'Developer Mode' toggle in bottom left";
+        }
       } else {
-        errorMessage += "Please enable Developer Mode:\n1. Go to chrome://extensions\n2. Enable 'Developer Mode' toggle in top right";
+        if (version >= 138) {
+          errorMessage += "Please enable 'Allow User Scripts' toggle:\n1. Go to chrome://extensions\n2. Click 'Details' on Magix extension\n3. Enable 'Allow User Scripts' toggle";
+        } else {
+          errorMessage += "Please enable Developer Mode:\n1. Go to chrome://extensions\n2. Enable 'Developer Mode' toggle in top right";
+        }
       }
       
       sendResponse({ 

@@ -7,6 +7,7 @@
 **AI-Powered Website Customization in Your Browser**
 
 [![Chrome Web Store](https://img.shields.io/badge/Chrome%20Web%20Store-Download-blue?style=for-the-badge&logo=google-chrome)](https://chromewebstore.google.com/detail/magix/ebfhenlkpdngcofiegobedbahdeemgjo)
+[![Edge Add-ons](https://img.shields.io/badge/Edge%20Add--ons-Download-blue?style=for-the-badge&logo=microsoft-edge)](https://microsoftedge.microsoft.com/addons/detail/magix)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
 [![Version](https://img.shields.io/badge/version-1.0.0-green?style=for-the-badge)](https://github.com/kchander/magix-extension)
 [![Twitter Follow](https://img.shields.io/badge/Follow-@kishanchander__-1DA1F2?style=for-the-badge&logo=x&logoColor=white)](https://x.com/kishanchander_)
@@ -19,7 +20,7 @@
 
 ## 🌟 What is Magix?
 
-Magix is a powerful Chrome extension that lets you modify **any website** using natural language. No coding required - just describe what you want, and watch as AI generates and applies the changes in real-time.
+Magix is a powerful browser extension for Chrome and Microsoft Edge that lets you modify **any website** using natural language. No coding required - just describe what you want, and watch as AI generates and applies the changes in real-time.
 
 Think of it as **ChatGPT meets Tampermonkey** - the conversational intelligence of AI combined with the power of custom scripts.
 
@@ -103,7 +104,7 @@ Think of it as **ChatGPT meets Tampermonkey** - the conversational intelligence 
 
 ## 🚀 Installation
 
-### ⭐ Chrome Web Store (Recommended)
+### ⭐ Chrome Web Store (Recommended for Chrome)
 
 **The easiest way to use Magix is to install it directly from the Chrome Web Store.**
 
@@ -118,6 +119,23 @@ Think of it as **ChatGPT meets Tampermonkey** - the conversational intelligence 
 ✅ **No coding needed** - No need to build from source  
 
 **Installation link:** https://chromewebstore.google.com/detail/magix/ebfhenlkpdngcofiegobedbahdeemgjo
+
+---
+
+### 🔷 Microsoft Edge Add-ons Store (Recommended for Edge)
+
+**Magix is also available for Microsoft Edge users!**
+
+[![Install from Edge Add-ons](https://img.shields.io/badge/Microsoft%20Edge-Install-blue?style=for-the-badge&logo=microsoft-edge)](https://microsoftedge.microsoft.com/addons/detail/magix)
+
+**Why use Magix on Edge?**
+
+✅ **Native Edge support** - Optimized for Microsoft Edge browser  
+✅ **Same great features** - All functionality works identically to Chrome version  
+✅ **Automatic updates** - Stay up to date with the latest features  
+✅ **Edge-specific instructions** - UI adapts to show Edge-specific guidance  
+
+**Note:** You can also install the Chrome version from the Chrome Web Store in Edge, as Edge supports Chrome extensions.
 
 ---
 
@@ -144,6 +162,12 @@ npm run build
 # 2. Enable "Developer mode"
 # 3. Click "Load unpacked"
 # 4. Select the magix-extension directory
+
+# Load in Microsoft Edge
+# 1. Go to edge://extensions/
+# 2. Enable "Developer mode" (toggle in bottom left)
+# 3. Click "Load unpacked"
+# 4. Select the magix-extension directory
 ```
 
 **Note:** If building from source, you'll need to set up your own Supabase backend. See [Supabase Setup Guide](#-supabase-setup-for-developers) below.
@@ -156,14 +180,14 @@ npm run build
 
 ### 1. Enable User Scripts (Required)
 
-**Chrome 138+:**
-1. Go to `chrome://extensions/`
+**Chrome 138+ / Edge 138+:**
+1. Go to `chrome://extensions/` (Chrome) or `edge://extensions/` (Edge)
 2. Find **Magix** and click **Details**
 3. Enable the **"Allow User Scripts"** toggle
 
-**Chrome <138:**
-1. Go to `chrome://extensions/`
-2. Enable **"Developer Mode"** in the top right
+**Chrome <138 / Edge <138:**
+1. Go to `chrome://extensions/` (Chrome) or `edge://extensions/` (Edge)
+2. Enable **"Developer Mode"** (top right in Chrome, bottom left in Edge)
 
 ### 2. Configure AI Provider
 
@@ -288,7 +312,7 @@ Made something cool? Share it with the community!
 
 - Node.js 16+
 - npm or yarn
-- Chrome/Chromium browser
+- Chrome/Chromium or Microsoft Edge browser
 - Supabase account (for data persistence)
 
 ### Local Development
@@ -432,9 +456,13 @@ npm run build
 <details>
 <summary><b>❌ "UserScripts API not available" Error</b></summary>
 
-**Solution:**
+**Solution for Chrome:**
 - Chrome 138+: Go to `chrome://extensions/` → Magix → Details → Enable "Allow User Scripts"
 - Chrome <138: Go to `chrome://extensions/` → Enable "Developer Mode"
+
+**Solution for Edge:**
+- Edge 138+: Go to `edge://extensions/` → Magix → Details → Enable "Allow User Scripts"
+- Edge <138: Go to `edge://extensions/` → Enable "Developer Mode" (toggle in bottom left)
 
 </details>
 
@@ -452,7 +480,7 @@ npm run build
 <summary><b>❌ Scripts not persisting / Sign-in not working</b></summary>
 
 **Solution:**
-- If using Chrome Web Store version: This should work out of the box
+- If using Chrome Web Store or Edge Add-ons version: This should work out of the box
 - If building from source: Make sure you've set up Supabase correctly (see Supabase Setup guide above)
 - Check that `sidepanel/.env.local` has correct credentials
 - Rebuild extension: `npm run build`
@@ -519,7 +547,7 @@ Built with amazing open-source technologies:
 - [Chrome Extensions API](https://developer.chrome.com/docs/extensions/) - Platform
 
 Special thanks to:
-- The Chrome Extensions developer community
+- The Chrome Extensions and Edge Add-ons developer communities
 - All contributors and users
 - Shoutout to [Droid from Factory AI](https://factory.ai) for being an awesome coding buddy throughout this project!
 
@@ -528,6 +556,7 @@ Special thanks to:
 ## 🔗 Links
 
 - 🌐 **Chrome Web Store**: https://chromewebstore.google.com/detail/magix/ebfhenlkpdngcofiegobedbahdeemgjo
+- 🔷 **Edge Add-ons**: https://microsoftedge.microsoft.com/addons/detail/magix
 - 📦 **GitHub Repository**: https://github.com/kchander/magix-extension
 - 🐛 **Issue Tracker**: https://github.com/kchander/magix-extension/issues
 - 💬 **Discussions**: https://github.com/kchander/magix-extension/discussions
@@ -539,7 +568,7 @@ Special thanks to:
 
 **What Data is Collected:**
 
-The Chrome Web Store version of Magix stores the following in a secure Supabase database:
+The Chrome Web Store and Edge Add-ons versions of Magix store the following in a secure Supabase database:
 
 ✅ **Your modifications** - The code you generate and apply to websites  
 ✅ **Chat history** - Your conversations with the AI (to maintain context and history)  
