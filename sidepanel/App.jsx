@@ -95,6 +95,27 @@ const placeholderSuggestions = [
   "Change the theme of this website to cyberpunk vibes",
 ];
 
+// Detect browser type (Chrome, Edge, or other Chromium-based)
+function detectBrowser() {
+  const userAgent = navigator.userAgent;
+  if (userAgent.includes('Edg/')) {
+    return 'edge';
+  } else if (userAgent.includes('Chrome/')) {
+    return 'chrome';
+  }
+  return 'chromium';
+}
+
+// Get extensions URL based on browser type
+function getExtensionsUrl() {
+  const browser = detectBrowser();
+  const extensionId = chrome.runtime.id;
+  if (browser === 'edge') {
+    return `edge://extensions/?id=${extensionId}`;
+  }
+  return `chrome://extensions/?id=${extensionId}`;
+}
+
 
 function App() {
   const [session, setSession] = useState(null);
@@ -1939,7 +1960,7 @@ function App() {
         <DialogActions sx={{ p: 2, pt: 0, flexDirection: 'column', gap: 1.5 }}>
           <Button 
             onClick={() => {
-              chrome.tabs.create({ url: 'chrome://extensions/?id=cmplfnciodajepjlbbajfelkjgoncfdo' });
+              chrome.tabs.create({ url: getExtensionsUrl() });
             }} 
             variant="contained" 
             size="medium"

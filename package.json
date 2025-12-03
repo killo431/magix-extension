@@ -1,7 +1,7 @@
 {
   "name": "magix-extenstion",
   "version": "1.0.0",
-  "description": "Magix Chrome Extension - Reshape the Web Through Conversation.",
+  "description": "Magix Chrome/Edge Extension - Reshape the Web Through Conversation.",
   "main": "background.js",
   "type": "module",
   "scripts": {
@@ -15,10 +15,11 @@
   },
   "keywords": [
     "chrome-extension",
+    "edge-extension",
+    "browser-extension",
     "ai",
     "web-modification",
     "userscripts",
-    "browser-extension",
     "gemini",
     "claude",
     "openai"
